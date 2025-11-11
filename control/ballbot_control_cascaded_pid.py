@@ -535,6 +535,14 @@ def main():
         prev_but_x = 0    # Previous state of cross button
         mode_start_time = t_start  # Track when current mode was entered
         
+        # Gain tuning state tracking (debouncing for D-pad)
+        prev_dpad_up = 0
+        prev_dpad_down = 0
+        prev_dpad_right = 0
+        prev_dpad_left = 0
+        last_gain_change_time = 0  # Timestamp of last gain change
+        GAIN_CHANGE_COOLDOWN = 0.2  # Minimum time between gain changes [seconds]
+        
         print("\n" + "="*80)
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
         print("="*80)
@@ -545,7 +553,13 @@ def main():
         print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
         print("\nADDITIONAL CONTROLS:")
         print("  R1:       Reset IMU reference (set current position as upright)")
+        print("\nGAIN TUNING (Inner Loop):")
+        print("  D-Pad Up:    Increase Kp by 0.5")
+        print("  D-Pad Down:  Decrease Kp by 0.5")
+        print("  D-Pad Right: Increase Kd by 0.1")
+        print("  D-Pad Left:  Decrease Kd by 0.1")
         print(f"\nStarting in Mode {control_mode}")
+        print(f"Initial Inner Loop Gains: Kp={inner_pid_x.Kp:.1f}, Ki={inner_pid_x.Ki:.2f}, Kd={inner_pid_x.Kd:.2f}")
         print("="*80 + "\n")
         
         # ====================================================================
@@ -642,6 +656,12 @@ def main():
                 # Shoulder buttons
                 shoulder_R1 = bt_signals["shoulder_R1"]  # R1 for reference reset
                 
+                # D-pad buttons for gain tuning
+                dpad_up = bt_signals["dpad_up"]      # Increase Kp
+                dpad_down = bt_signals["dpad_down"]  # Decrease Kp
+                dpad_right = bt_signals["dpad_right"]  # Increase Kd
+                dpad_left = bt_signals["dpad_left"]  # Decrease Kd
+                
                 # ============================================================
                 # REFERENCE RESET (R1 button)
                 # ============================================================
@@ -652,6 +672,56 @@ def main():
                     theta_y_0 = msg.imu_angles_rpy[1]
                     theta_z_0 = msg.imu_angles_rpy[2]
                     print("\n>>> IMU REFERENCE RESET - Current position set as upright <<<\n")
+                
+                # ============================================================
+                # DYNAMIC GAIN TUNING (D-pad with debouncing and cooldown)
+                # ============================================================
+                
+                current_time = time.time()
+                gain_changed = False
+                
+                # Check if enough time has passed since last gain change (cooldown)
+                if current_time - last_gain_change_time > GAIN_CHANGE_COOLDOWN:
+                    # D-pad Up: Increase Kp
+                    if dpad_up == 1 and prev_dpad_up == 0:
+                        inner_pid_x.Kp += 0.5
+                        inner_pid_y.Kp += 0.5
+                        gain_changed = True
+                        last_gain_change_time = current_time
+                    
+                    # D-pad Down: Decrease Kp
+                    elif dpad_down == 1 and prev_dpad_down == 0:
+                        inner_pid_x.Kp = max(0.0, inner_pid_x.Kp - 0.5)  # Don't go negative
+                        inner_pid_y.Kp = max(0.0, inner_pid_y.Kp - 0.5)
+                        gain_changed = True
+                        last_gain_change_time = current_time
+                    
+                    # D-pad Right: Increase Kd
+                    elif dpad_right == 1 and prev_dpad_right == 0:
+                        inner_pid_x.Kd += 0.1
+                        inner_pid_y.Kd += 0.1
+                        gain_changed = True
+                        last_gain_change_time = current_time
+                    
+                    # D-pad Left: Decrease Kd
+                    elif dpad_left == 1 and prev_dpad_left == 0:
+                        inner_pid_x.Kd = max(0.0, inner_pid_x.Kd - 0.1)  # Don't go negative
+                        inner_pid_y.Kd = max(0.0, inner_pid_y.Kd - 0.1)
+                        gain_changed = True
+                        last_gain_change_time = current_time
+                
+                # Update previous D-pad states
+                prev_dpad_up = dpad_up
+                prev_dpad_down = dpad_down
+                prev_dpad_right = dpad_right
+                prev_dpad_left = dpad_left
+                
+                # Print gain update message
+                if gain_changed:
+                    print("\n" + "="*80)
+                    print(">>> INNER LOOP GAINS UPDATED <<<")
+                    print(f"Kp = {inner_pid_x.Kp:.1f} | Ki = {inner_pid_x.Ki:.2f} | Kd = {inner_pid_x.Kd:.2f}")
+                    print("="*80 + "\n")
                 
                 # ============================================================
                 # CONTROL MODE SWITCHING (with debouncing)
@@ -855,7 +925,8 @@ def main():
                         f"T=[{Tx:.2f}, {Ty:.2f}, {Tz:.2f}] | "
                         f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
-                        f"v=[{dx:.2f}, {dy:.2f}] m/s"
+                        f"v=[{dx:.2f}, {dy:.2f}] m/s | "
+                        f"PID(Kp={inner_pid_x.Kp:.1f}, Ki={inner_pid_x.Ki:.1f}, Kd={inner_pid_x.Kd:.1f})"
                     )
             
             except KeyError as e:
