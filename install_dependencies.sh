@@ -13,15 +13,16 @@ then
     exit 1
 fi
 
-# Install PyQtGraph and its dependencies
+# Install PyQtGraph and its dependencies with --break-system-packages flag
+# This flag is needed on newer Debian/Ubuntu systems with externally-managed Python
 echo "Installing PyQtGraph..."
-pip3 install pyqtgraph
+pip3 install --break-system-packages pyqtgraph
 
 echo "Installing PyQt5 (GUI backend)..."
-pip3 install PyQt5
+pip3 install --break-system-packages PyQt5
 
 echo "Installing numpy (if not already installed)..."
-pip3 install numpy
+pip3 install --break-system-packages numpy
 
 echo ""
 echo "================================================"
