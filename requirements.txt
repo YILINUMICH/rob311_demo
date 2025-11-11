@@ -1,0 +1,6 @@
+# ROB 311 - Real-time Plotting Dependencies
+# Install with: pip3 install -r requirements.txt
+
+pyqtgraph>=0.13.0
+PyQt5>=5.15.0
+numpy>=1.20.0

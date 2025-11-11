@@ -32,9 +32,17 @@ import time
 import lcm
 import threading
 import numpy as np
+import sys
+import os
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-from DataLogger import dataLogger
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from utils.DataLogger import dataLogger
+
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtCore, QtWidgets
 
 # Constants for the control loop
 FREQ = 200  # Frequency of control loop in Hz
@@ -45,6 +53,14 @@ PWM_PERIOD = 3  # Time period for full accel/decel of motor test
 # Global flags to control the listening thread & msg data
 listening = False
 msg = mbot_balbot_feedback_t()
+
+# Global data buffers for plotting
+plot_data = {
+    'time': [],
+    'pwm1': [], 'pwm2': [], 'pwm3': [],
+    'enc1': [], 'enc2': [], 'enc3': []
+}
+MAX_PLOT_POINTS = 1000  # Maximum number of points to display
 
 def feedback_handler(channel, data):
     """Callback function to handle received mbot_balbot_feedback_t messages"""
@@ -62,12 +78,84 @@ def lcm_listener(lc):
             break
 
 
+class RealTimePlotter:
+    """Class to handle real-time plotting of motor PWM and encoder data"""
+    
+    def __init__(self):
+        # Create the application and main window
+        self.app = QtWidgets.QApplication.instance()
+        if self.app is None:
+            self.app = QtWidgets.QApplication(sys.argv)
+        
+        self.win = pg.GraphicsLayoutWidget(show=True, title="Motor Test Real-Time Data")
+        self.win.resize(1200, 800)
+        self.win.setWindowTitle('ROB 311 - Motor Test Real-Time Plotting')
+        
+        # Create plots
+        self.pwm_plot = self.win.addPlot(title="Motor PWM Commands", row=0, col=0)
+        self.pwm_plot.setLabel('left', 'PWM', units='')
+        self.pwm_plot.setLabel('bottom', 'Time', units='s')
+        self.pwm_plot.addLegend()
+        self.pwm_plot.setYRange(-1.1, 1.1)
+        
+        self.enc_plot = self.win.addPlot(title="Encoder Ticks", row=1, col=0)
+        self.enc_plot.setLabel('left', 'Ticks', units='')
+        self.enc_plot.setLabel('bottom', 'Time', units='s')
+        self.enc_plot.addLegend()
+        
+        # Create plot curves
+        self.pwm1_curve = self.pwm_plot.plot(pen=pg.mkPen('r', width=2), name='Motor 1')
+        self.pwm2_curve = self.pwm_plot.plot(pen=pg.mkPen('g', width=2), name='Motor 2')
+        self.pwm3_curve = self.pwm_plot.plot(pen=pg.mkPen('b', width=2), name='Motor 3')
+        
+        self.enc1_curve = self.enc_plot.plot(pen=pg.mkPen('r', width=2), name='Encoder 1')
+        self.enc2_curve = self.enc_plot.plot(pen=pg.mkPen('g', width=2), name='Encoder 2')
+        self.enc3_curve = self.enc_plot.plot(pen=pg.mkPen('b', width=2), name='Encoder 3')
+        
+        # Timer for updating plots
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_plots)
+        self.timer.start(50)  # Update every 50ms (20 Hz update rate for display)
+        
+    def update_plots(self):
+        """Update the plot data"""
+        global plot_data
+        
+        if len(plot_data['time']) > 0:
+            # Limit data points for performance
+            if len(plot_data['time']) > MAX_PLOT_POINTS:
+                for key in plot_data:
+                    plot_data[key] = plot_data[key][-MAX_PLOT_POINTS:]
+            
+            # Update PWM plots
+            self.pwm1_curve.setData(plot_data['time'], plot_data['pwm1'])
+            self.pwm2_curve.setData(plot_data['time'], plot_data['pwm2'])
+            self.pwm3_curve.setData(plot_data['time'], plot_data['pwm3'])
+            
+            # Update encoder plots
+            self.enc1_curve.setData(plot_data['time'], plot_data['enc1'])
+            self.enc2_curve.setData(plot_data['time'], plot_data['enc2'])
+            self.enc3_curve.setData(plot_data['time'], plot_data['enc3'])
+    
+    def process_events(self):
+        """Process Qt events to keep GUI responsive"""
+        self.app.processEvents()
+
+
 def main():
     # === Data Logging Initialization ===
     # Prompt user for trial number and create a data logger
     trial_num = int(input("Test Number? "))
     filename = f"test_motors_{trial_num}.txt"
     dl = dataLogger(filename)
+    
+    # === Real-Time Plotting Initialization ===
+    enable_plotting = input("Enable real-time plotting? (y/n): ").lower().strip() == 'y'
+    plotter = None
+    if enable_plotting:
+        print("Initializing real-time plotter...")
+        plotter = RealTimePlotter()
+        print("Real-time plotting enabled!")
     
     # === LCM Messaging Initialization ===
     # Initialize the serial communication protocol
@@ -133,9 +221,22 @@ def main():
                     f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
                     f"Enc 1: {enc_1}, Enc 2: {enc_2}, Enc 3: {enc_3} | "
                 )
+                
+                # Update plot data if plotting is enabled
+                if enable_plotting:
+                    plot_data['time'].append(t_now)
+                    plot_data['pwm1'].append(u1)
+                    plot_data['pwm2'].append(u2)
+                    plot_data['pwm3'].append(u3)
+                    plot_data['enc1'].append(enc_1)
+                    plot_data['enc2'].append(enc_2)
+                    plot_data['enc3'].append(enc_3)
+                    plotter.process_events()
             
             except KeyError:
                 print("Waiting for sensor data...")
+                if enable_plotting:
+                    plotter.process_events()
 
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received. Stopping all commands...")
@@ -155,6 +256,11 @@ def main():
         listening = False
         print("Stopping LCM listener...")
         listener_thread.join(timeout=1)  # Wait up to 1 second for thread to finish
+        
+        # Keep plot window open if plotting was enabled
+        if enable_plotting:
+            print("Test complete! Close the plot window to exit.")
+            plotter.app.exec_()
 
 if __name__ == "__main__":
     main()

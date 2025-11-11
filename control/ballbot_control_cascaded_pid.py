@@ -24,10 +24,15 @@ import time
 import lcm
 import threading
 import numpy as np
+import sys
+import os
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-from DataLogger import dataLogger
-from ps4_controller_api import PS4InputHandler
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from utils.DataLogger import dataLogger
+from utils.ps4_controller_api import PS4InputHandler
 
 # ============================================================================
 # SYSTEM CONSTANTS
@@ -415,22 +420,17 @@ def main():
     
     # X-axis (Forward/Backward - Pitch)
     # Note: Sign may need adjustment based on IMU mounting orientation
-    # ANUHEA
     inner_pid_x = PIDController(
-        Kp=11.5, Ki=1.7, Kd=.05,
+        Kp=12.0, Ki=0.0, Kd=1.0,
         dt=DT, 
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
     )
-
-    kp_tune = inner_pid_x.Kp
-    ki_tune = inner_pid_x.Ki
-    kd_tune = inner_pid_x.Kd
     
     # Y-axis (Left/Right - Roll)
     # Note: Sign may need adjustment based on IMU mounting orientation
     inner_pid_y = PIDController(
-        Kp=11.5, Ki=1.7, Kd=0.05,
+        Kp=12.0, Ki=0.0, Kd=1.0,
         dt=DT,
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
@@ -534,14 +534,6 @@ def main():
         prev_but_cir = 0  # Previous state of circle button
         prev_but_x = 0    # Previous state of cross button
         mode_start_time = t_start  # Track when current mode was entered
-
-        # Fixing debounce issue for buttons
-        # ANUHEA
-        tune_target = 0
-        tune_step_kp = 0.5
-        tune_step_ki = 0.05
-        tune_step_kd = 0.05
-        last_tune_time = time.time()
         
         print("\n" + "="*80)
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
@@ -638,10 +630,6 @@ def main():
                 bt_signals = controller.get_signals()
                 js_R_x = bt_signals["js_R_x"]      # Right stick X (left/right)
                 js_R_y = bt_signals["js_R_y"]      # Right stick Y (forward/back)
-
-                js_L_x = bt_signals["js_L_x"]      # Left stick X (used for tuning mode switch)
-                js_L_y = bt_signals["js_L_y"]      # Left stick Y (optional for future use)
-
                 trigger_L2 = bt_signals["trigger_L2"]  # Left trigger (rotate CCW)
                 trigger_R2 = bt_signals["trigger_R2"]  # Right trigger (rotate CW)
                 
@@ -653,13 +641,7 @@ def main():
                 
                 # Shoulder buttons
                 shoulder_R1 = bt_signals["shoulder_R1"]  # R1 for reference reset
-
-                # Left joytstick
-                dir_up = bt_signals["dir_U"]
-                dir_down = bt_signals["dir_D"]
-                dir_left = bt_signals["dir_L"]
-                dir_right = bt_signals["dir_R"]
-                                
+                
                 # ============================================================
                 # REFERENCE RESET (R1 button)
                 # ============================================================
@@ -760,47 +742,9 @@ def main():
                     theta_d_x = js_R_y_filtered * 0.1  # Small lean angle command
                     theta_d_y = js_R_x_filtered * 0.1
 
-                    # --- Live PID tuning via D-Pad + left joystick (with debounce) ---
-                    current_time = time.time()
 
-                    # === Live PID tuning using Left Joystick and D-Pad ===
-                    # Left joystick left/right cycles between parameters
-                    # D-Pad up/down increases or decreases the selected parameter
-                    # Kp, Ki, Kd are shared for both X and Y axes
 
-                    if current_time - last_tune_time > 0.3:
-                        # Cycle tuning target using left joystick horizontal axis
-                        if js_L_x > 0.5:  # move joystick right
-                            tune_target = (tune_target + 1) % 3
-                            modes = ["Kp", "Ki", "Kd"]
-                            print(f"Now editing {modes[tune_target]}")
-                            last_tune_time = current_time
-                        elif js_L_x < -0.5:  # move joystick left
-                            tune_target = (tune_target - 1) % 3
-                            modes = ["Kp", "Ki", "Kd"]
-                            print(f"Now editing {modes[tune_target]}")
-                            last_tune_time = current_time
-
-                        # Adjust current parameter using D-Pad up/down
-                        delta = (dir_up - dir_down)
-                        if delta != 0:
-                            if tune_target == 0:  # Kp
-                                kp_tune = max(0.0, kp_tune + delta * tune_step_kp)
-                                print(f"Kp updated: {kp_tune:.3f}")
-                            elif tune_target == 1:  # Ki
-                                ki_tune = max(0.0, ki_tune + delta * tune_step_ki)
-                                print(f"Ki updated: {ki_tune:.3f}")
-                            elif tune_target == 2:  # Kd
-                                kd_tune = max(0.0, kd_tune + delta * tune_step_kd)
-                                print(f"Kd updated: {kd_tune:.3f}")
-                            last_tune_time = current_time
-
-                    # Apply new shared gains to both inner-loop PIDs
-                    for pid in (inner_pid_x, inner_pid_y):
-                        pid.Kp = kp_tune
-                        pid.Ki = ki_tune
-                        pid.Kd = kd_tune
-
+                    # --------------------------------------------------------
                     # --------------------------------------------------------
                     # Inner loop: lean angle error → motor torque
                     # Note: theta_x/theta_y from IMU may be swapped relative to robot frame
@@ -825,36 +769,6 @@ def main():
                     # Mode 3: Cascaded PID control (autonomous balance)
                     # --------------------------------------------------------
                     # Full cascaded control with position/velocity feedback
-                    # === Adaptive PID tuning section ===
-                    # Triggered every few cycles while balancing
-
-                    if i % 50 == 0:  # every 0.25s
-                        # Compute error magnitude
-                        err_mag_x = abs(theta_d_x - theta_x)
-                        err_mag_y = abs(theta_d_y - theta_y)
-
-                        # Combine or keep separate
-                        mean_err = (err_mag_x + err_mag_y) / 2
-
-                        # Update rule (simple adaptive gradient-like heuristic)
-                        if mean_err > np.radians(3):  # large error -> need stronger correction
-                            kp_tune += 0.1
-                            kd_tune += 0.01
-                            print(f"↑ Increasing gains: Kp={kp_tune:.2f}, Kd={kd_tune:.2f}")
-                        elif mean_err < np.radians(1):  # low error -> can reduce aggressiveness
-                            kp_tune = max(0.1, kp_tune - 0.05)
-                            kd_tune = max(0.0, kd_tune - 0.01)
-                            print(f"↓ Decreasing gains: Kp={kp_tune:.2f}, Kd={kd_tune:.2f}")
-
-                        # Adjust Ki slowly for steady-state bias
-                        ki_tune = max(0.0, min(ki_tune + 0.01 * (mean_err - np.radians(1)), 2.0))
-
-                        # Apply new gains
-                        for pid in (inner_pid_x, inner_pid_y):
-                            pid.Kp = kp_tune
-                            pid.Ki = ki_tune
-                            pid.Kd = kd_tune
-
                     
                     # Outer loop update (runs at reduced frequency)
                     if i % OUTER_LOOP_DECIMATION == 0:
@@ -869,16 +783,6 @@ def main():
                         # Safety: clamp lean angle setpoint
                         theta_d_x = func_clip(theta_d_x, -THETA_MAX, THETA_MAX)
                         theta_d_y = func_clip(theta_d_y, -THETA_MAX, THETA_MAX)
-                    # If robot leans too far, trigger reset
-                    if abs(theta_x) > np.radians(15) or abs(theta_y) > np.radians(15):
-                        print("\n⚠️ Robot fell! Resetting controller state...")
-                        inner_pid_x.reset()
-                        inner_pid_y.reset()
-                        kp_tune *= 0.9   # slightly reduce gains to avoid re-fall
-                        kd_tune *= 0.9
-                        ki_tune *= 0.9
-                        time.sleep(1.5)
-
                     
                     # Inner loop update (runs every iteration)
                     # Attitude control: lean angle error → motor torque
@@ -951,9 +855,9 @@ def main():
                         f"T=[{Tx:.2f}, {Ty:.2f}, {Tz:.2f}] | "
                         f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
-                        f"v=[{dx:.2f}, {dy:.2f}] m/s | "
-                        f"Kp={kp_tune:.2f}, Ki={ki_tune:.3f}, Kd={kd_tune:.3f}"
+                        f"v=[{dx:.2f}, {dy:.2f}] m/s"
                     )
+            
             except KeyError as e:
                 print(f"WARNING: Waiting for sensor data... (missing key: {e})")
                 continue
@@ -987,19 +891,6 @@ def main():
         print("\n" + "="*80)
         print("SHUTTING DOWN")
         print("="*80)
-
-        # Before shutdown
-        with open("pid_gains.txt", "w") as f:
-            f.write(f"{kp_tune} {ki_tune} {kd_tune}\n")
-
-        # On startup
-        try:
-            with open("pid_gains.txt") as f:
-                kp_tune, ki_tune, kd_tune = map(float, f.read().split())
-                print(f"✓ Loaded previous gains: Kp={kp_tune:.2f}, Ki={ki_tune:.2f}, Kd={kd_tune:.2f}")
-        except FileNotFoundError:
-            pass
-
         
         # Save logged data
         print(f"\n→ Saving data to {filename}...")
@@ -1014,11 +905,7 @@ def main():
             print("WARNING: LCM listener thread did not stop cleanly")
         else:
             print("✓ LCM listener stopped")
-
-        print("\nFinal tuned PID values:")
-        print(f"  Kp = {kp_tune:.3f}")
-        print(f"  Ki = {ki_tune:.3f}")
-        print(f"  Kd = {kd_tune:.3f}")
+        
         # Stop controller thread
         print("\n→ Stopping controller...")
         controller_thread.join(timeout=1)
@@ -1027,7 +914,7 @@ def main():
             print("WARNING: Controller thread did not stop cleanly")
         else:
             print("✓ Controller stopped")
-                
+        
         # Final motor shutdown (redundant safety measure)
         print("\n→ Final motor shutdown...")
         command = mbot_motor_pwm_t()

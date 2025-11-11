@@ -27,9 +27,17 @@ import time
 import lcm
 import threading
 import numpy as np
+import sys
+import os
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-from DataLogger import dataLogger
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from utils.DataLogger import dataLogger
+
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtCore, QtWidgets
 
 # Constants for the control loop
 FREQ = 200  # Frequency of control loop in Hz
@@ -41,6 +49,15 @@ N_ENC = 64 # Ticks per revolution of encoder
 # Global flags to control the listening thread & msg data
 listening = False
 msg = mbot_balbot_feedback_t()
+
+# Global data buffers for plotting
+plot_data = {
+    'time': [],
+    'roll': [],   # theta_x
+    'pitch': [],  # theta_y
+    'yaw': []     # theta_z
+}
+MAX_PLOT_POINTS = 1000  # Maximum number of points to display
 
 def feedback_handler(channel, data):
     """Callback function to handle received mbot_balbot_feedback_t messages"""
@@ -58,12 +75,82 @@ def lcm_listener(lc):
             break
 
 
+class RealTimePlotter:
+    """Class to handle real-time plotting of IMU angle data"""
+    
+    def __init__(self):
+        # Create the application and main window
+        self.app = QtWidgets.QApplication.instance()
+        if self.app is None:
+            self.app = QtWidgets.QApplication(sys.argv)
+        
+        self.win = pg.GraphicsLayoutWidget(show=True, title="IMU Test Real-Time Data")
+        self.win.resize(1200, 800)
+        self.win.setWindowTitle('ROB 311 - IMU Test Real-Time Plotting')
+        
+        # Create plots for IMU angles
+        self.roll_plot = self.win.addPlot(title="IMU Roll (θx)", row=0, col=0)
+        self.roll_plot.setLabel('left', 'Angle', units='rad')
+        self.roll_plot.setLabel('bottom', 'Time', units='s')
+        self.roll_plot.addLegend()
+        self.roll_plot.showGrid(x=True, y=True, alpha=0.3)
+        
+        self.pitch_plot = self.win.addPlot(title="IMU Pitch (θy)", row=1, col=0)
+        self.pitch_plot.setLabel('left', 'Angle', units='rad')
+        self.pitch_plot.setLabel('bottom', 'Time', units='s')
+        self.pitch_plot.addLegend()
+        self.pitch_plot.showGrid(x=True, y=True, alpha=0.3)
+        
+        self.yaw_plot = self.win.addPlot(title="IMU Yaw (θz)", row=2, col=0)
+        self.yaw_plot.setLabel('left', 'Angle', units='rad')
+        self.yaw_plot.setLabel('bottom', 'Time', units='s')
+        self.yaw_plot.addLegend()
+        self.yaw_plot.showGrid(x=True, y=True, alpha=0.3)
+        
+        # Create plot curves
+        self.roll_curve = self.roll_plot.plot(pen=pg.mkPen('r', width=2), name='Roll')
+        self.pitch_curve = self.pitch_plot.plot(pen=pg.mkPen('g', width=2), name='Pitch')
+        self.yaw_curve = self.yaw_plot.plot(pen=pg.mkPen('b', width=2), name='Yaw')
+        
+        # Timer for updating plots
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_plots)
+        self.timer.start(50)  # Update every 50ms (20 Hz update rate for display)
+        
+    def update_plots(self):
+        """Update the plot data"""
+        global plot_data
+        
+        if len(plot_data['time']) > 0:
+            # Limit data points for performance
+            if len(plot_data['time']) > MAX_PLOT_POINTS:
+                for key in plot_data:
+                    plot_data[key] = plot_data[key][-MAX_PLOT_POINTS:]
+            
+            # Update IMU angle plots
+            self.roll_curve.setData(plot_data['time'], plot_data['roll'])
+            self.pitch_curve.setData(plot_data['time'], plot_data['pitch'])
+            self.yaw_curve.setData(plot_data['time'], plot_data['yaw'])
+    
+    def process_events(self):
+        """Process Qt events to keep GUI responsive"""
+        self.app.processEvents()
+
+
 def main():
     # === Data Logging Initialization ===
     # Prompt user for trial number and create a data logger
     trial_num = int(input("Test Number? "))
     filename = f"test_IMU_{trial_num}.txt"
     dl = dataLogger(filename)
+    
+    # === Real-Time Plotting Initialization ===
+    enable_plotting = input("Enable real-time plotting? (y/n): ").lower().strip() == 'y'
+    plotter = None
+    if enable_plotting:
+        print("Initializing real-time plotter...")
+        plotter = RealTimePlotter()
+        print("Real-time plotting enabled!")
     
     # === LCM Messaging Initialization ===
     # Initialize the serial communication protocol
@@ -122,9 +209,19 @@ def main():
                     f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
                     f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
                 )
+                
+                # Update plot data if plotting is enabled
+                if enable_plotting:
+                    plot_data['time'].append(t_now)
+                    plot_data['roll'].append(theta_x)
+                    plot_data['pitch'].append(theta_y)
+                    plot_data['yaw'].append(theta_z)
+                    plotter.process_events()
             
             except KeyError:
                 print("Waiting for sensor data...")
+                if enable_plotting:
+                    plotter.process_events()
 
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received. Stopping all commands...")
@@ -144,6 +241,11 @@ def main():
         listening = False
         print("Stopping LCM listener...")
         listener_thread.join(timeout=1)  # Wait up to 1 second for thread to finish
+        
+        # Keep plot window open if plotting was enabled
+        if enable_plotting:
+            print("Test complete! Close the plot window to exit.")
+            plotter.app.exec_()
 
 if __name__ == "__main__":
     main()
