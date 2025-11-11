@@ -29,6 +29,8 @@ import threading
 import numpy as np
 import sys
 import os
+import socket
+import json
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
 
@@ -36,8 +38,18 @@ from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from utils.DataLogger import dataLogger
 
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtCore, QtWidgets
+# Set Qt platform to offscreen if no display is available
+# This prevents crashes when running via SSH or headless
+if 'DISPLAY' not in os.environ or not os.environ['DISPLAY']:
+    os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
+try:
+    import pyqtgraph as pg
+    from pyqtgraph.Qt import QtCore, QtWidgets
+    PLOTTING_AVAILABLE = True
+except ImportError:
+    print("Warning: PyQtGraph not available. Real-time plotting disabled.")
+    PLOTTING_AVAILABLE = False
 
 # Constants for the control loop
 FREQ = 200  # Frequency of control loop in Hz
@@ -144,13 +156,60 @@ def main():
     filename = f"test_IMU_{trial_num}.txt"
     dl = dataLogger(filename)
     
-    # === Real-Time Plotting Initialization ===
-    enable_plotting = input("Enable real-time plotting? (y/n): ").lower().strip() == 'y'
+    # === Network Plotting Initialization ===
+    enable_network_plot = False
+    plot_socket = None
+    plot_client = None
+    
+    user_input = input("Enable network plotting (view on laptop)? (y/n): ").lower().strip()
+    enable_network_plot = user_input == 'y'
+    
+    if enable_network_plot:
+        PORT = 5555
+        plot_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        plot_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        plot_socket.bind(('0.0.0.0', PORT))
+        plot_socket.listen(1)
+        plot_socket.settimeout(10.0)
+        
+        print(f"\n{'='*80}")
+        print("WAITING FOR LAPTOP CONNECTION")
+        print(f"{'='*80}")
+        print(f"On your laptop, run:")
+        print(f"  python imu_viewer.py {socket.gethostname()}")
+        print(f"  or")
+        print(f"  python imu_viewer.py <robot_ip_address>")
+        print(f"{'='*80}\n")
+        
+        try:
+            plot_client, addr = plot_socket.accept()
+            print(f"✓ Laptop connected from {addr[0]}:{addr[1]}")
+            print("Starting data collection...\n")
+        except socket.timeout:
+            print("✗ No connection received within 10 seconds. Continuing without plotting...")
+            enable_network_plot = False
+            plot_socket.close()
+            plot_socket = None
+    
+    # === Real-Time Plotting Initialization (fallback for local display) ===
+    enable_plotting = False
     plotter = None
-    if enable_plotting:
-        print("Initializing real-time plotter...")
-        plotter = RealTimePlotter()
-        print("Real-time plotting enabled!")
+    
+    if not enable_network_plot and PLOTTING_AVAILABLE:
+        user_input = input("Enable local real-time plotting? (y/n): ").lower().strip()
+        enable_plotting = user_input == 'y'
+        
+        if enable_plotting:
+            try:
+                print("Initializing real-time plotter...")
+                plotter = RealTimePlotter()
+                print("Real-time plotting enabled!")
+            except Exception as e:
+                print(f"Warning: Could not initialize plotter: {e}")
+                print("Continuing without real-time plotting...")
+                enable_plotting = False
+    elif not enable_network_plot:
+        print("Real-time plotting not available (PyQtGraph not installed or no display).")
     
     # === LCM Messaging Initialization ===
     # Initialize the serial communication protocol
@@ -173,14 +232,8 @@ def main():
         enc_pos_1_start = msg.enc_ticks[0]
         enc_pos_2_start = msg.enc_ticks[1]
         enc_pos_3_start = msg.enc_ticks[2]
-        data = ["i t_now Tx Ty Tz u1 u2 u3 theta_x theta_y theta_z psi_1 psi_2 psi_3 dpsi_1 dpsi_2 dpsi_3"]
+        data = ["i t_now theta_x theta_y theta_z"]
         dl.appendData(data)
-        Tx = 0
-        Ty = 0
-        Tz = 0
-        u1 = 0
-        u2 = 0
-        u3 = 0
 
         while True:
             time.sleep(DT)
@@ -192,25 +245,41 @@ def main():
                 theta_x = msg.imu_angles_rpy[0]
                 theta_y = msg.imu_angles_rpy[1]
                 theta_z = msg.imu_angles_rpy[2]
-                psi_1 = 0
-                psi_2 = 0
-                psi_3 = 0
-                dpsi_1 = 0
-                dpsi_2 = 0
-                dpsi_3 = 0
                 
                 # Store and printout data
-                data = [i, t_now, Tx, Ty, Tz, u1, u2, u3, theta_x, theta_y, theta_z, psi_1, psi_2, psi_3, dpsi_1, dpsi_2, dpsi_3]
+                data = [i, t_now, theta_x, theta_y, theta_z]
                 dl.appendData(data)
                 print(
-                    f"Time: {t_now:.3f}s | Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
-                    f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
-                    f"Theta X: {theta_x:.2f}, Theta Y: {theta_y:.2f}, Theta Z: {theta_z:.2f} | "
-                    f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
-                    f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
+                    f"Time: {t_now:.3f}s | "
+                    f"Theta X: {theta_x:.4f} rad ({np.degrees(theta_x):.2f}°) | "
+                    f"Theta Y: {theta_y:.4f} rad ({np.degrees(theta_y):.2f}°) | "
+                    f"Theta Z: {theta_z:.4f} rad ({np.degrees(theta_z):.2f}°)"
                 )
                 
-                # Update plot data if plotting is enabled
+                # Send data to laptop if network plotting is enabled
+                if enable_network_plot and plot_client:
+                    try:
+                        data_packet = {
+                            'time': t_now,
+                            'theta_x_rad': theta_x,
+                            'theta_y_rad': theta_y,
+                            'theta_z_rad': theta_z,
+                            'theta_x_deg': np.degrees(theta_x),
+                            'theta_y_deg': np.degrees(theta_y),
+                            'theta_z_deg': np.degrees(theta_z)
+                        }
+                        # Send as JSON with newline delimiter
+                        json_str = json.dumps(data_packet) + '\n'
+                        plot_client.sendall(json_str.encode('utf-8'))
+                    except (BrokenPipeError, ConnectionResetError):
+                        print("✗ Laptop disconnected")
+                        enable_network_plot = False
+                        plot_client.close()
+                        plot_client = None
+                    except Exception as e:
+                        print(f"Error sending plot data: {e}")
+                
+                # Update plot data if local plotting is enabled
                 if enable_plotting:
                     plot_data['time'].append(t_now)
                     plot_data['roll'].append(theta_x)
@@ -237,6 +306,14 @@ def main():
         # Save/log data
         print(f"Saving data as {filename}...")
         dl.writeOut()  # Write logged data to the file
+        
+        # Close network plotting connection
+        if plot_client:
+            print("Closing network plot connection...")
+            plot_client.close()
+        if plot_socket:
+            plot_socket.close()
+        
         # Stop the listener thread
         listening = False
         print("Stopping LCM listener...")

@@ -797,8 +797,8 @@ def main():
                 if current_time - last_gain_change_time > GAIN_CHANGE_COOLDOWN:
                     # D-pad Up: Increase Kp
                     if dpad_up == 1 and prev_dpad_up == 0:
-                        inner_pid_x.Kp += 0.5
-                        inner_pid_y.Kp += 0.5
+                        inner_pid_x.Kp += 0.1
+                        inner_pid_y.Kp += 0.1
                         gain_changed = True
                         last_gain_change_time = current_time
                     
