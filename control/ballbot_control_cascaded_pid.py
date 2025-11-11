@@ -1080,6 +1080,28 @@ def main():
                 
                 if i % 10 == 0:
                     mode_names = ["Test Seq", "Manual", "Balance", "Cascaded"]
+
+                    # Terminal highlight codes (use if available)
+                    Hs = globals().get('H_START', '')
+                    He = globals().get('H_END', '')
+
+                    # Prepare highlighted PID summary based on current selection
+                    try:
+                        sel = gain_sel
+                    except NameError:
+                        sel = None
+
+                    kp_s = f"{inner_pid_x.Kp:.1f}"
+                    ki_s = f"{inner_pid_x.Ki:.1f}"
+                    kd_s = f"{inner_pid_x.Kd:.1f}"
+
+                    if sel == 0:
+                        kp_s = f"{Hs}{kp_s}{He}"
+                    elif sel == 1:
+                        ki_s = f"{Hs}{ki_s}{He}"
+                    elif sel == 2:
+                        kd_s = f"{Hs}{kd_s}{He}"
+
                     print(
                         f"[Mode {control_mode}:{mode_names[control_mode]}] "
                         f"t={t_now:.2f}s | "
@@ -1087,7 +1109,7 @@ def main():
                         f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
                         f"v=[{dx:.2f}, {dy:.2f}] m/s | "
-                        f"PID(Kp={inner_pid_x.Kp:.1f}, Ki={inner_pid_x.Ki:.1f}, Kd={inner_pid_x.Kd:.1f})"
+                        f"PID(Kp={kp_s}, Ki={ki_s}, Kd={kd_s})"
                     )
             
             except KeyError as e:
