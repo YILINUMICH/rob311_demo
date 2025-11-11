@@ -66,7 +66,11 @@ VELOCITY_MAX = 1.0  # Maximum commanded velocity [m/s]
 YAW_RATE_MAX = 2.0  # Maximum yaw rate [rad/s]
 
 # Sensor Filtering
-IMU_DEADZONE = np.radians(.2)  # IMU angle deadzone [rad] (0.2 degrees) - ignore small angles to reduce noise
+IMU_DEADZONE = np.radians(.5)  # IMU angle deadzone [rad] (0.5 degrees) - ignore small angles to reduce noise
+# IMU filtering (exponential moving average). Set ENABLE to True to smooth noisy IMU angles.
+# ALPHA is the weight given to the new measurement (0..1). Smaller alpha -> smoother, but slower.
+IMU_FILTER_ENABLED = True
+IMU_FILTER_ALPHA = 0.4  # new_val*alpha + prev*(1-alpha)
 
 # ============================================================================
 # GLOBAL VARIABLES FOR LCM COMMUNICATION
@@ -596,6 +600,10 @@ def main():
         theta_x_0 = msg.imu_angles_rpy[0]
         theta_y_0 = msg.imu_angles_rpy[1]
         theta_z_0 = msg.imu_angles_rpy[2]
+        # Initialize IMU filter state (start from zero offset)
+        imu_filt_x = 0.0
+        imu_filt_y = 0.0
+        imu_filt_z = 0.0
         
         # Initialize control variables
         Tx = Ty = Tz = 0.0
@@ -668,10 +676,21 @@ def main():
                 theta_y_raw = msg.imu_angles_rpy[1] - theta_y_0  # Roll
                 theta_z_raw = msg.imu_angles_rpy[2] - theta_z_0  # Yaw
                 
-                # Apply deadzone filter to reduce noise and prevent constant small corrections
-                theta_x = apply_deadzone(theta_x_raw, IMU_DEADZONE)
-                theta_y = apply_deadzone(theta_y_raw, IMU_DEADZONE)
-                theta_z = apply_deadzone(theta_z_raw, IMU_DEADZONE)
+                # Apply optional IMU filtering (exponential moving average) then deadzone
+                if IMU_FILTER_ENABLED:
+                    # new = alpha*raw + (1-alpha)*prev
+                    imu_filt_x = IMU_FILTER_ALPHA * theta_x_raw + (1.0 - IMU_FILTER_ALPHA) * imu_filt_x
+                    imu_filt_y = IMU_FILTER_ALPHA * theta_y_raw + (1.0 - IMU_FILTER_ALPHA) * imu_filt_y
+                    imu_filt_z = IMU_FILTER_ALPHA * theta_z_raw + (1.0 - IMU_FILTER_ALPHA) * imu_filt_z
+
+                    theta_x = apply_deadzone(imu_filt_x, IMU_DEADZONE)
+                    theta_y = apply_deadzone(imu_filt_y, IMU_DEADZONE)
+                    theta_z = apply_deadzone(imu_filt_z, IMU_DEADZONE)
+                else:
+                    # No filtering, use raw values
+                    theta_x = apply_deadzone(theta_x_raw, IMU_DEADZONE)
+                    theta_y = apply_deadzone(theta_y_raw, IMU_DEADZONE)
+                    theta_z = apply_deadzone(theta_z_raw, IMU_DEADZONE)
                 
                 # IMU angular velocities (gyroscope readings)
                 # WARNING: The message struct only has angles, not rates!
@@ -1091,9 +1110,9 @@ def main():
                     except NameError:
                         sel = None
 
-                    kp_s = f"{inner_pid_x.Kp:.1f}"
-                    ki_s = f"{inner_pid_x.Ki:.1f}"
-                    kd_s = f"{inner_pid_x.Kd:.1f}"
+                    kp_s = f"{inner_pid_x.Kp:.3f}"
+                    ki_s = f"{inner_pid_x.Ki:.3f}"
+                    kd_s = f"{inner_pid_x.Kd:.3f}"
 
                     if sel == 0:
                         kp_s = f"{Hs}{kp_s}{He}"
@@ -1105,11 +1124,11 @@ def main():
                     print(
                         f"[Mode {control_mode}:{mode_names[control_mode]}] "
                         f"t={t_now:.2f}s | "
-                        f"T=[{Tx:.2f}, {Ty:.2f}, {Tz:.2f}] | "
-                        f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
+                        # f"T=[{Tx:.2f}, {Ty:.2f}, {Tz:.2f}] | "
+                        # f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
                         f"v=[{dx:.2f}, {dy:.2f}] m/s | "
-                        f"PID(Kp={kp_s}, Ki={ki_s}, Kd={kd_s})"
+                        f"innerPID(Kp={kp_s}, Ki={ki_s}, Kd={kd_s})"
                     )
             
             except KeyError as e:
