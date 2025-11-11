@@ -613,41 +613,41 @@ def main():
         prev_but_x = 0    # Previous state of cross button
         mode_start_time = t_start  # Track when current mode was entered
         
-    # Gain tuning state tracking (debouncing for D-pad)
-    prev_dpad_up = 0
-    prev_dpad_down = 0
-    prev_dpad_right = 0
-    prev_dpad_left = 0
-    last_gain_change_time = 0  # Timestamp of last gain change
-    GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
+        # Gain tuning state tracking (debouncing for D-pad)
+        prev_dpad_up = 0
+        prev_dpad_down = 0
+        prev_dpad_right = 0
+        prev_dpad_left = 0
+        last_gain_change_time = 0  # Timestamp of last gain change
+        GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
 
-    # Gain selection: 0 = P, 1 = I, 2 = D (select with D-pad left/right)
-    gain_sel = 0
-    # Increments for each gain type
-    GAIN_INC = {0: 0.1, 1: 0.01, 2: 0.01}
+        # Gain selection: 0 = P, 1 = I, 2 = D (select with D-pad left/right)
+        gain_sel = 0
+        # Increments for each gain type
+        GAIN_INC = {0: 0.1, 1: 0.01, 2: 0.01}
         
-    print("\n" + "="*80)
-    print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
-    print("="*80)
-    print("\n🚨 EMERGENCY STOP:")
-    print("  TOUCHPAD:     Press touchpad/PS button to KILL system immediately")
-    print("  L3 + R3:      Press BOTH joysticks down simultaneously to KILL system")
-    print("\nCONTROL MODE SWITCHING:")
-    print("  Square:   Mode 0 - Open-loop test sequence")
-    print("  Cross:    Mode 1 - Bluetooth controller (manual)")
-    print("  Circle:   Mode 2 - Balance PID")
-    print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
-    print("\nADDITIONAL CONTROLS:")
-    print("  R1:       Reset IMU reference (set current position as upright)")
-    print("\nGAIN TUNING (Inner Loop):")
-    print("  D-Pad Left/Right: Select parameter (P, I, D)")
-    print("  D-Pad Up/Down:    Increase / Decrease the selected parameter")
-    print("    - P increment: 0.10")
-    print("    - I increment: 0.01")
-    print("    - D increment: 0.01")
-    print(f"\nStarting in Mode {control_mode}")
-    print(f"Initial Inner Loop Gains: Kp={inner_pid_x.Kp:.2f}, Ki={inner_pid_x.Ki:.3f}, Kd={inner_pid_x.Kd:.3f}")
-    print("="*80 + "\n")
+        print("\n" + "="*80)
+        print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
+        print("="*80)
+        print("\n🚨 EMERGENCY STOP:")
+        print("  TOUCHPAD:     Press touchpad/PS button to KILL system immediately")
+        print("  L3 + R3:      Press BOTH joysticks down simultaneously to KILL system")
+        print("\nCONTROL MODE SWITCHING:")
+        print("  Square:   Mode 0 - Open-loop test sequence")
+        print("  Cross:    Mode 1 - Bluetooth controller (manual)")
+        print("  Circle:   Mode 2 - Balance PID")
+        print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
+        print("\nADDITIONAL CONTROLS:")
+        print("  R1:       Reset IMU reference (set current position as upright)")
+        print("\nGAIN TUNING (Inner Loop):")
+        print("  D-Pad Left/Right: Select parameter (P, I, D)")
+        print("  D-Pad Up/Down:    Increase / Decrease the selected parameter")
+        print("    - P increment: 0.10")
+        print("    - I increment: 0.01")
+        print("    - D increment: 0.01")
+        print(f"\nStarting in Mode {control_mode}")
+        print(f"Initial Inner Loop Gains: Kp={inner_pid_x.Kp:.2f}, Ki={inner_pid_x.Ki:.3f}, Kd={inner_pid_x.Kd:.3f}")
+        print("="*80 + "\n")
         
         # ====================================================================
         # MAIN CONTROL LOOP
@@ -800,8 +800,8 @@ def main():
                 gain_changed = False
                 selection_changed = False
 
-                # Terminal highlight helpers
-                H_START = '\033[7m'  # reverse video
+                # Terminal highlight helpers - use bright yellow for visibility
+                H_START = '\033[1;33m'  # bold yellow
                 H_END = '\033[0m'
 
                 # Check if enough time has passed since last gain change (cooldown)
@@ -852,9 +852,20 @@ def main():
                 # Print selection or gain update message
                 if selection_changed:
                     sel_name = ['P', 'I', 'D'][gain_sel]
+                    # Prepare highlighted summary
+                    kp_s = f"{inner_pid_x.Kp:.3f}"
+                    ki_s = f"{inner_pid_x.Ki:.3f}"
+                    kd_s = f"{inner_pid_x.Kd:.3f}"
+                    if gain_sel == 0:
+                        kp_s = H_START + kp_s + H_END
+                    elif gain_sel == 1:
+                        ki_s = H_START + ki_s + H_END
+                    elif gain_sel == 2:
+                        kd_s = H_START + kd_s + H_END
+
                     print("\n" + "="*80)
-                    print(f"Selected parameter for tuning: {H_START}{sel_name}{H_END}")
-                    print(f"Kp = {inner_pid_x.Kp:.3f} | Ki = {inner_pid_x.Ki:.3f} | Kd = {inner_pid_x.Kd:.3f}")
+                    print(f"[SELECTED: {H_START}{sel_name}{H_END}]  Use D-Pad Up/Down to change the value")
+                    print(f"Kp = {kp_s} | Ki = {ki_s} | Kd = {kd_s}")
                     print("="*80 + "\n")
                 elif gain_changed:
                     # Highlight the changed parameter in the summary
