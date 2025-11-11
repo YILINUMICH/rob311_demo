@@ -6,22 +6,21 @@
 rob311_demo/
 ├── tests/              # Test scripts for motors, IMU, and Bluetooth
 │   ├── test_motors.py
-│   ├── imu_test.py
+│   ├── imu_realtime.py    # IMU test with network plotting
+│   ├── imu_viewer.py      # Laptop viewer for real-time IMU data
 │   └── test_BT.py
 ├── control/            # Ball-bot control algorithms
 │   ├── ballbot_control.py
 │   ├── ballbot_control_cascaded_pid.py
 │   ├── ballbot_control_lab-07-08 solution.py
+│   ├── pid_gains.json     # Persistent PID gain storage
 │   └── lab9_demo.py
 ├── utils/              # Utility modules
 │   ├── DataLogger.py
 │   └── ps4_controller_api.py
-├── data/               # Data output files
-│   ├── test_IMU_1.txt
-│   └── test_motors_1.txt
-├── docs/               # Documentation
-│   └── PLOTTING_README.md
-├── requirements.txt    # Python dependencies
+├── data/               # Data output files (auto-generated)
+│   ├── test_IMU_*.txt
+│   └── test_motors_*.txt
 └── install_dependencies.sh  # Dependency installation script
 ```
 
@@ -29,28 +28,41 @@ rob311_demo/
 
 ### 1. Install Dependencies
 
-For real-time plotting features:
+**On the Robot:**
 ```bash
 ./install_dependencies.sh
 ```
 
-Or using pip:
+This installs:
+- numpy (numerical computing)
+- lcm (robot messaging)
+
+**On Your Laptop (for real-time plotting):**
 ```bash
-pip3 install -r requirements.txt
+pip install matplotlib
 ```
 
 ### 2. Run Tests
 
-#### Motor Test (with real-time plotting)
+#### IMU Test with Network Plotting
+**On Robot:**
+```bash
+cd tests
+python3 imu_realtime.py
+```
+When prompted, choose 'y' for network plotting.
+
+**On Laptop:**
+```bash
+python imu_viewer.py <robot_ip_address>
+```
+
+Real-time plots will display on your laptop showing IMU angles (roll, pitch, yaw) in degrees or radians!
+
+#### Motor Test
 ```bash
 cd tests
 python3 test_motors.py
-```
-
-#### IMU Test (with real-time plotting)
-```bash
-cd tests
-python3 imu_test.py
 ```
 
 #### Bluetooth Test
@@ -63,34 +75,40 @@ python3 test_BT.py
 
 ```bash
 cd control
-python3 ballbot_control.py
-# or
-python3 lab9_demo.py
+python3 ballbot_control_cascaded_pid.py
 ```
 
-## 📊 Real-Time Plotting
+PID gains are automatically saved and loaded from `pid_gains.json`.
 
-Both `test_motors.py` and `imu_test.py` now support real-time plotting using PyQtGraph.
+## 📊 Network-Based Real-Time Plotting
 
-See [docs/PLOTTING_README.md](docs/PLOTTING_README.md) for detailed instructions.
+IMU data visualization is now done via network connection - no X11 forwarding needed!
+
+**Architecture:**
+- Robot runs `imu_realtime.py` and sends data over TCP (port 5555)
+- Laptop runs `imu_viewer.py` to display real-time plots
+- Data transmitted as JSON (human-readable, easy to debug)
 
 **Features:**
-- High-performance plotting at 200 Hz data collection rate
-- Motor test: PWM commands and encoder readings
-- IMU test: Roll, Pitch, Yaw angles
-- Color-coded plots for easy identification
-- Optional - can still run without plotting
+- Real-time IMU angle visualization (theta_x, theta_y, theta_z)
+- Display in degrees or radians (configurable)
+- High-performance plotting at 200 Hz data rate
+- Network-based - works over SSH without display forwarding
+- Simple JSON protocol for easy integration
+- Color-coded plots: Red (X), Green (Y), Blue (Z)
 
 ## 📝 File Descriptions
 
 ### Tests (`tests/`)
+- **imu_realtime.py** - IMU test with network plotting capability (runs on robot)
+- **imu_viewer.py** - Real-time viewer for IMU data (runs on laptop)
 - **test_motors.py** - Motor driver test with PWM and encoder feedback
-- **imu_test.py** - IMU orientation test with angle readings
 - **test_BT.py** - Bluetooth communication test
 
 ### Control (`control/`)
+- **ballbot_control_cascaded_pid.py** - Cascaded PID control with gain persistence
+- **pid_gains.json** - Saved PID tuning parameters (auto-saved on exit)
 - **ballbot_control.py** - Basic ball-bot control implementation
-- **ballbot_control_cascaded_pid.py** - Cascaded PID control
 - **ballbot_control_lab-07-08 solution.py** - Lab solution reference
 - **lab9_demo.py** - Lab 9 demonstration code
 
@@ -98,23 +116,44 @@ See [docs/PLOTTING_README.md](docs/PLOTTING_README.md) for detailed instructions
 - **DataLogger.py** - Data logging utility class
 - **ps4_controller_api.py** - PS4 controller interface
 
-### Data (`data/`)
-- Test output files (`.txt` format)
+### Data Files
+- **test_IMU_*.txt** - IMU test output (time, theta_x, theta_y, theta_z)
+- **test_motors_*.txt** - Motor test output
 - Generated automatically by test scripts
 
 ## 🔧 Dependencies
 
+### Robot (Raspberry Pi)
 - Python 3.x
-- lcm (Lightweight Communications and Marshalling)
-- numpy
-- mbot_lcm_msgs
-- **For plotting:**
-  - pyqtgraph
-  - PyQt5
+- numpy - Numerical computing
+- lcm - Lightweight Communications and Marshalling
+- mbot_lcm_msgs - Custom robot message types
+- json - Data serialization (built-in)
 
-## 📖 Documentation
+### Laptop (for plotting)
+- Python 3.x
+- matplotlib - Real-time plotting library
 
-- [Real-Time Plotting Guide](docs/PLOTTING_README.md) - Detailed guide for plotting features
+### Installation
+Run `./install_dependencies.sh` on the robot to install all required packages.
+
+## ✨ Key Features
+
+### PID Gain Persistence
+- PID gains automatically saved to `control/pid_gains.json`
+- Loads previous gains on startup
+- No need to re-tune after each restart
+
+### Network Plotting
+- View real-time IMU data on your laptop
+- No X11 forwarding required
+- JSON-based protocol for debugging
+- Toggle between degrees and radians
+
+### Simplified Data Logging
+- Clean, focused data output
+- Only essential values logged (time + IMU angles)
+- Easy to parse and analyze
 
 ## 🏫 Course Information
 

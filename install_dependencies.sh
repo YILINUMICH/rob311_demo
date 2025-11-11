@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# ROB 311 - Real-time Plotting Dependencies Installation Script
-# This script installs the required Python packages for real-time plotting
+# ROB 311 - Robot Dependencies Installation Script
+# This script installs the required Python packages for the robot
 
-echo "Installing dependencies for real-time plotting..."
+echo "Installing dependencies for robot..."
 echo "================================================"
 
 # Check if pip is available
@@ -13,25 +13,29 @@ then
     exit 1
 fi
 
-# Install PyQtGraph and its dependencies with --break-system-packages flag
+# Install Python packages with --break-system-packages flag
 # This flag is needed on newer Debian/Ubuntu systems with externally-managed Python
-echo "Installing PyQtGraph..."
-pip3 install --break-system-packages pyqtgraph
 
-echo "Installing PyQt5 (GUI backend)..."
-pip3 install --break-system-packages PyQt5
-
-echo "Installing numpy (if not already installed)..."
+echo "Installing numpy..."
 pip3 install --break-system-packages numpy
+
+echo "Installing lcm (Lightweight Communications and Marshalling)..."
+pip3 install --break-system-packages lcm
 
 echo ""
 echo "================================================"
 echo "Installation complete!"
 echo ""
 echo "Installed packages:"
-echo "  - pyqtgraph: High-performance real-time plotting"
-echo "  - PyQt5: GUI backend for PyQtGraph"
-echo "  - numpy: Numerical computing library"
+echo "  - numpy: Numerical computing library (used by control algorithms)"
+echo "  - lcm: Lightweight Communications and Marshalling (robot messaging)"
 echo ""
-echo "You can now run test_motors.py with real-time plotting capability."
+echo "Additional requirements:"
+echo "  - mbot_lcm_msgs: Custom LCM message types (should be pre-installed)"
+echo "  - utils/DataLogger.py: Data logging utilities (included in repo)"
+echo "  - utils/ps4_controller_api.py: PS4 controller interface (included in repo)"
+echo ""
+echo "Note: Real-time plotting is done via network connection to your laptop."
+echo "On your laptop, install matplotlib to use imu_viewer.py:"
+echo "  pip install matplotlib"
 echo "================================================"
