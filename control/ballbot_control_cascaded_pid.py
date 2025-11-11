@@ -441,7 +441,9 @@ def main():
     # ========================================================================
     
     trial_num = int(input("Test Number? "))
-    filename = f"ballbot_control_{trial_num}.txt"
+    # Save under data/ with absolute path so files don't end up in control/
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+    filename = os.path.join(data_dir, f"ballbot_control_{trial_num}.txt")
     dl = dataLogger(filename)
     print(f"Data will be saved to: {filename}")
     
@@ -575,9 +577,16 @@ def main():
         "phi_x", "phi_y",  # Ball position (odometry) [rad]
         "x", "y",  # Linear position [m]
         "dx", "dy",  # Linear velocity [m/s]
-        "theta_d_x", "theta_d_y"  # Desired lean angles [rad]
+        "theta_d_x", "theta_d_y",  # Desired lean angles [rad]
+        # Append current PID gains for analysis (logged each row)
+        "Kp_in_x", "Ki_in_x", "Kd_in_x",
+        "Kp_in_y", "Ki_in_y", "Kd_in_y",
+        "Kp_out_x", "Ki_out_x", "Kd_out_x",
+        "Kp_out_y", "Ki_out_y", "Kd_out_y",
+        "Kp_yaw", "Ki_yaw", "Kd_yaw"
     ]
-    dl.appendData([" ".join(data_header)])
+    # Write header as separate columns
+    dl.appendData(data_header)
     
     # ========================================================================
     # CONTROL LOOP INITIALIZATION
@@ -1089,7 +1098,13 @@ def main():
                     phi_x, phi_y,
                     x, y,
                     dx, dy,
-                    theta_d_x, theta_d_y
+                    theta_d_x, theta_d_y,
+                    # Current PID gains at time of sample
+                    inner_pid_x.Kp, inner_pid_x.Ki, inner_pid_x.Kd,
+                    inner_pid_y.Kp, inner_pid_y.Ki, inner_pid_y.Kd,
+                    outer_pid_x.Kp, outer_pid_x.Ki, outer_pid_x.Kd,
+                    outer_pid_y.Kp, outer_pid_y.Ki, outer_pid_y.Kd,
+                    yaw_pid.Kp, yaw_pid.Ki, yaw_pid.Kd
                 ]
                 dl.appendData(data)
                 
