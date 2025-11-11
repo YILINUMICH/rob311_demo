@@ -55,6 +55,9 @@ class PS4InputHandler(Controller):
             "dir_R": 0,
             "dir_U": 0,
             "dir_D": 0,
+            "but_L3": 0,
+            "but_R3": 0,
+            "touchpad": 0,
         }
 
     # === Left Joystick (L3) ===
@@ -84,6 +87,16 @@ class PS4InputHandler(Controller):
         self.signals["js_R_x"] = 0.0
     def on_R3_y_at_rest(self):
         self.signals["js_R_y"] = 0.0
+    
+    # === L3 and R3 Button Press (Joystick Click) ===
+    def on_L3_press(self):
+        self.signals["but_L3"] = 1
+    def on_L3_release(self):
+        self.signals["but_L3"] = 0
+    def on_R3_press(self):
+        self.signals["but_R3"] = 1
+    def on_R3_release(self):
+        self.signals["but_R3"] = 0
         
     # === Triggers (L2 and R2) ===
     def on_L2_press(self, value):
@@ -140,6 +153,12 @@ class PS4InputHandler(Controller):
     def on_up_down_arrow_release(self):
         self.signals["dir_U"] = 0
         self.signals["dir_D"] = 0
+
+    # === Touchpad Button ===
+    def on_playstation_button_press(self):
+        self.signals["touchpad"] = 1
+    def on_playstation_button_release(self):
+        self.signals["touchpad"] = 0
 
     # === Options Button ===
     def on_options_press(self):

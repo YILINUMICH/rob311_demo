@@ -546,6 +546,9 @@ def main():
         print("\n" + "="*80)
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
         print("="*80)
+        print("\n🚨 EMERGENCY STOP:")
+        print("  TOUCHPAD:     Press touchpad/PS button to KILL system immediately")
+        print("  L3 + R3:      Press BOTH joysticks down simultaneously to KILL system")
         print("\nCONTROL MODE SWITCHING:")
         print("  Square:   Mode 0 - Open-loop test sequence")
         print("  Cross:    Mode 1 - Bluetooth controller (manual)")
@@ -657,10 +660,42 @@ def main():
                 shoulder_R1 = bt_signals["shoulder_R1"]  # R1 for reference reset
                 
                 # D-pad buttons for gain tuning
-                dpad_up = bt_signals["dpad_up"]      # Increase Kp
-                dpad_down = bt_signals["dpad_down"]  # Decrease Kp
-                dpad_right = bt_signals["dpad_right"]  # Increase Kd
-                dpad_left = bt_signals["dpad_left"]  # Decrease Kd
+                dpad_up = bt_signals["dir_U"]      # Increase Kp
+                dpad_down = bt_signals["dir_D"]  # Decrease Kp
+                dpad_right = bt_signals["dir_R"]  # Increase Kd
+                dpad_left = bt_signals["dir_L"]  # Decrease Kd
+                
+                # Emergency stop buttons
+                but_L3 = bt_signals["but_L3"]      # L3 press (left joystick click)
+                but_R3 = bt_signals["but_R3"]      # R3 press (right joystick click)
+                touchpad = bt_signals["touchpad"]  # Touchpad/PS button press
+                
+                # ============================================================
+                # EMERGENCY STOP
+                # ============================================================
+                
+                # Check for emergency stop conditions:
+                # 1. Touchpad/PS button pressed
+                # 2. Both L3 AND R3 pressed simultaneously
+                emergency_stop = touchpad == 1 or (but_L3 == 1 and but_R3 == 1)
+                
+                if emergency_stop:
+                    # Immediately stop all motors
+                    command.pwm = [0.0, 0.0, 0.0]
+                    lc.publish("MBOT_MOTOR_PWM", command.encode())
+                    
+                    print("\n" + "!"*80)
+                    print("!!! EMERGENCY STOP ACTIVATED !!!")
+                    if touchpad == 1:
+                        print("!!! Triggered by: TOUCHPAD PRESS !!!")
+                    else:
+                        print("!!! Triggered by: L3 + R3 PRESS !!!")
+                    print("!"*80)
+                    print("\nAll motors stopped. Exiting control loop safely...")
+                    print("System halted.\n")
+                    
+                    # Exit the control loop
+                    break
                 
                 # ============================================================
                 # REFERENCE RESET (R1 button)
