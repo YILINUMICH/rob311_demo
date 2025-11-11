@@ -26,6 +26,7 @@ import threading
 import numpy as np
 import sys
 import os
+import json
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
 
@@ -348,6 +349,70 @@ class PIDController:
 
 
 # ============================================================================
+# PID GAINS SAVE/LOAD FUNCTIONS
+# ============================================================================
+
+def save_pid_gains(inner_x, inner_y, outer_x, outer_y, yaw, filename='pid_gains.json'):
+    """
+    Save PID gains to a JSON file for persistence across runs.
+    
+    Args:
+        inner_x: Inner loop X-axis PIDController
+        inner_y: Inner loop Y-axis PIDController
+        outer_x: Outer loop X-axis PIDController
+        outer_y: Outer loop Y-axis PIDController
+        yaw: Yaw PIDController
+        filename: Path to save gains file
+    """
+    gains = {
+        'inner_x': {'Kp': inner_x.Kp, 'Ki': inner_x.Ki, 'Kd': inner_x.Kd},
+        'inner_y': {'Kp': inner_y.Kp, 'Ki': inner_y.Ki, 'Kd': inner_y.Kd},
+        'outer_x': {'Kp': outer_x.Kp, 'Ki': outer_x.Ki, 'Kd': outer_x.Kd},
+        'outer_y': {'Kp': outer_y.Kp, 'Ki': outer_y.Ki, 'Kd': outer_y.Kd},
+        'yaw': {'Kp': yaw.Kp, 'Ki': yaw.Ki, 'Kd': yaw.Kd}
+    }
+    
+    try:
+        with open(filename, 'w') as f:
+            json.dump(gains, f, indent=4)
+        print(f"✓ PID gains saved to {filename}")
+    except Exception as e:
+        print(f"✗ Failed to save PID gains: {e}")
+
+
+def load_pid_gains(filename='pid_gains.json'):
+    """
+    Load PID gains from a JSON file, or return defaults if file doesn't exist.
+    
+    Args:
+        filename: Path to gains file
+        
+    Returns:
+        Dictionary containing PID gains for all controllers
+    """
+    # Default gains (used if file doesn't exist)
+    defaults = {
+        'inner_x': {'Kp': 1.0, 'Ki': 0.0, 'Kd': 0.0},
+        'inner_y': {'Kp': 1.0, 'Ki': 0.0, 'Kd': 0.0},
+        'outer_x': {'Kp': 0.3, 'Ki': 0.05, 'Kd': 0.8},
+        'outer_y': {'Kp': 0.3, 'Ki': 0.05, 'Kd': 0.8},
+        'yaw': {'Kp': 0.5, 'Ki': 0.1, 'Kd': 0.05}
+    }
+    
+    try:
+        with open(filename, 'r') as f:
+            gains = json.load(f)
+        print(f"✓ PID gains loaded from {filename}")
+        return gains
+    except FileNotFoundError:
+        print(f"ℹ No saved gains found, using defaults")
+        return defaults
+    except Exception as e:
+        print(f"✗ Failed to load PID gains: {e}, using defaults")
+        return defaults
+
+
+# ============================================================================
 # MAIN CONTROL LOOP
 # ============================================================================
 
@@ -406,6 +471,9 @@ def main():
     # CONTROLLER INITIALIZATION
     # ========================================================================
     
+    # Load PID gains from file (or use defaults if file doesn't exist)
+    gains = load_pid_gains('pid_gains.json')
+    
     # Inner loop controllers (attitude stabilization) - FAST
     # These run at full 200 Hz and directly control motor torques
     # PURPOSE: Stabilize lean angle (theta) to prevent falling
@@ -421,7 +489,9 @@ def main():
     # X-axis (Forward/Backward - Pitch)
     # Note: Sign may need adjustment based on IMU mounting orientation
     inner_pid_x = PIDController(
-        Kp=12.0, Ki=0.0, Kd=1.0,
+        Kp=gains['inner_x']['Kp'], 
+        Ki=gains['inner_x']['Ki'], 
+        Kd=gains['inner_x']['Kd'],
         dt=DT, 
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
@@ -430,7 +500,9 @@ def main():
     # Y-axis (Left/Right - Roll)
     # Note: Sign may need adjustment based on IMU mounting orientation
     inner_pid_y = PIDController(
-        Kp=12.0, Ki=0.0, Kd=1.0,
+        Kp=gains['inner_y']['Kp'], 
+        Ki=gains['inner_y']['Ki'], 
+        Kd=gains['inner_y']['Kd'],
         dt=DT,
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
@@ -451,7 +523,9 @@ def main():
     
     # X-axis (Forward/Backward velocity control)
     outer_pid_x = PIDController(
-        Kp=0.3, Ki=0.05, Kd=0.8,  # Tune these independently for X axis
+        Kp=gains['outer_x']['Kp'], 
+        Ki=gains['outer_x']['Ki'], 
+        Kd=gains['outer_x']['Kd'],
         dt=DT * OUTER_LOOP_DECIMATION,
         integral_limit=2.0,
         output_limit=(-THETA_MAX, THETA_MAX)
@@ -459,7 +533,9 @@ def main():
     
     # Y-axis (Left/Right velocity control)
     outer_pid_y = PIDController(
-        Kp=0.3, Ki=0.05, Kd=0.8,  # Tune these independently for Y axis
+        Kp=gains['outer_y']['Kp'], 
+        Ki=gains['outer_y']['Ki'], 
+        Kd=gains['outer_y']['Kd'],
         dt=DT * OUTER_LOOP_DECIMATION,
         integral_limit=2.0,
         output_limit=(-THETA_MAX, THETA_MAX)
@@ -467,7 +543,9 @@ def main():
     
     # Yaw controller (heading control) - INDEPENDENT
     yaw_pid = PIDController(
-        Kp=0.5, Ki=0.1, Kd=0.05,
+        Kp=gains['yaw']['Kp'], 
+        Ki=gains['yaw']['Ki'], 
+        Kd=gains['yaw']['Kd'],
         dt=DT,
         integral_limit=1.0,
         output_limit=(-PWM_MAX, PWM_MAX)
@@ -1002,6 +1080,10 @@ def main():
         print(f"\n→ Saving data to {filename}...")
         dl.writeOut()
         print("✓ Data saved successfully")
+        
+        # Save PID gains
+        print("\n→ Saving PID gains...")
+        save_pid_gains(inner_pid_x, inner_pid_y, outer_pid_x, outer_pid_y, yaw_pid, 'pid_gains.json')
         
         # Stop LCM listener thread
         listening = False
