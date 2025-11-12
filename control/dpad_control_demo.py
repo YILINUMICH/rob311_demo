@@ -24,12 +24,14 @@ Date: November 2025
 """
 
 import time
+import lcm
+import threading
 import sys
 import os
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils.ps4_controller_api import PS4InputHandler
+from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
+from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
+from DataLogger import dataLogger
+from ps4_controller_api import PS4InputHandler
 
 # ============================================================================
 # TERMINAL HIGHLIGHTING SETUP
@@ -94,7 +96,7 @@ def main():
     print("  D-pad LEFT/RIGHT : Cycle through parameters (Kp → Ki → Kd → Kp)")
     print("  D-pad UP         : Increase selected parameter")
     print("  D-pad DOWN       : Decrease selected parameter")
-    print("  OPTIONS button   : Exit demo")
+    print("  Ctrl+C           : Exit demo")
     print("\nThe currently selected parameter will be highlighted in the display.")
     print("="*80 + "\n")
     
@@ -106,8 +108,7 @@ def main():
     print("→ Initializing PS4 controller...")
     try:
         controller = PS4InputHandler(
-            verbose=False,
-            device_path='/dev/input/js0',
+            interface='/dev/input/js0',
             connecting_using_ds4drv=False
         )
         print("✓ Controller connected successfully\n")
@@ -117,7 +118,9 @@ def main():
         return
     
     # Start controller in separate thread
-    controller_thread = controller.start()
+    controller_thread = threading.Thread(target=controller.listen, args=(10,))
+    controller_thread.daemon = True
+    controller_thread.start()
     time.sleep(0.5)  # Brief delay to ensure controller is ready
     
     # ========================================================================
@@ -152,8 +155,9 @@ def main():
     
     try:
         iteration = 0
+        running = True
         
-        while controller.states['options'] != 1:  # Exit on OPTIONS button
+        while running:  # Run continuously
             time.sleep(0.05)  # 20 Hz update rate for this demo
             iteration += 1
             
@@ -161,11 +165,14 @@ def main():
             # D-PAD INPUT HANDLING
             # ================================================================
             
+            # Get current controller signals
+            signals = controller.get_signals()
+            
             # Get current D-pad button states (0 = not pressed, 1 = pressed)
-            dpad_up = controller.states['dpad_up']
-            dpad_down = controller.states['dpad_down']
-            dpad_left = controller.states['dpad_left']
-            dpad_right = controller.states['dpad_right']
+            dpad_up = signals['dir_U']
+            dpad_down = signals['dir_D']
+            dpad_left = signals['dir_L']
+            dpad_right = signals['dir_R']
             
             # ----------------------------------------------------------------
             # SELECTION CYCLING (Left/Right D-pad)

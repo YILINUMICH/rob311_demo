@@ -19,13 +19,11 @@ import threading
 import numpy as np
 import sys
 import os
+import json
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils.DataLogger import dataLogger
-from utils.ps4_controller_api import PS4InputHandler
+from DataLogger import dataLogger
+from ps4_controller_api import PS4InputHandler
 
 # Constants for the control loop
 FREQ = 200  # Frequency of control loop [Hz]

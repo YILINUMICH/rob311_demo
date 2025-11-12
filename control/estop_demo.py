@@ -28,7 +28,6 @@ from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
 from DataLogger import dataLogger
 from ps4_controller_api import PS4InputHandler
 
-
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
