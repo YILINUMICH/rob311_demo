@@ -246,6 +246,63 @@ def apply_deadzone(x, deadzone):
         return 0.0
     return x
 
+# One-function helper to smooth PWM commands (low-pass + slew-limit)
+def pwm_smooth(u1, u2, u3, dt, enable=True, tau=0.06, max_slew_per_sec=6.0, out_limit=None):
+    """
+    Smooth rapid PWM changes to reduce back-current and protect hardware.
+
+    Args:
+        u1,u2,u3: desired PWM commands in [-1,1]
+        dt: loop time step [s]
+        enable: bypass filter if False
+        tau: low-pass filter time constant [s]; 0 disables LPF
+        max_slew_per_sec: max absolute PWM change per second; None disables slew limiting
+        out_limit: tuple (lo,hi) saturation; defaults to (-PWM_MAX, PWM_MAX)
+
+    Returns:
+        tuple (u1,u2,u3) filtered and saturated
+    """
+    if out_limit is None:
+        out_limit = (-PWM_MAX, PWM_MAX)
+    lo, hi = out_limit
+
+    # Fast path: only clip if disabled
+    if not enable:
+        return (
+            func_clip(u1, lo, hi),
+            func_clip(u2, lo, hi),
+            func_clip(u3, lo, hi),
+        )
+
+    # Initialize persistent state on first call to avoid startup bump
+    if not hasattr(pwm_smooth, "_y"):
+        pwm_smooth._y = [float(u1), float(u2), float(u3)]
+
+    x = [float(u1), float(u2), float(u3)]
+    y_prev = pwm_smooth._y
+
+    # Discrete first-order low-pass filter: y += alpha*(x - y)
+    alpha = (dt / (tau + dt)) if tau and tau > 0.0 else 1.0
+    y_lpf = [yp + alpha * (xi - yp) for xi, yp in zip(x, y_prev)]
+
+    # Slew-rate limiting per step
+    if max_slew_per_sec is not None and max_slew_per_sec > 0.0:
+        max_step = max_slew_per_sec * dt
+        y_slew = []
+        for yi, yp in zip(y_lpf, y_prev):
+            d = yi - yp
+            if d > max_step:
+                yi = yp + max_step
+            elif d < -max_step:
+                yi = yp - max_step
+            y_slew.append(yi)
+    else:
+        y_slew = y_lpf
+
+    # Final saturation
+    y_clip = [func_clip(v, lo, hi) for v in y_slew]
+    pwm_smooth._y = y_clip
+    return tuple(y_clip)
 
 # ============================================================================
 # PID CONTROLLER CLASS
@@ -612,10 +669,10 @@ def main():
         imu_filt_y = 0.0
         imu_filt_z = 0.0
         
-        # Initialize control variables
-        Tx = Ty = Tz = 0.0
-        u1 = u2 = u3 = 0.0
-        theta_d_x = theta_d_y = 0.0
+    # Initialize control variables
+    Tx = Ty = Tz = 0.0
+    u1 = u2 = u3 = 0.0
+    theta_d_x = theta_d_y = 0.0
         
         # Previous position for velocity estimation
         prev_x = prev_y = 0.0
@@ -629,51 +686,51 @@ def main():
         mode_start_time = t_start  # Track when current mode was entered
         
         # Gain tuning state tracking (debouncing for D-pad)
-        prev_dpad_up = 0
-        prev_dpad_down = 0
-        prev_dpad_right = 0
-        prev_dpad_left = 0
-        last_gain_change_time = 0  # Timestamp of last gain change
-        GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
+    prev_dpad_up = 0
+    prev_dpad_down = 0
+    prev_dpad_right = 0
+    prev_dpad_left = 0
+    last_gain_change_time = 0  # Timestamp of last gain change
+    GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
 
-        # Gain selection: 0 = P, 1 = I, 2 = D (select with D-pad left/right)
-        gain_sel = 0
-        # Increments for each gain type
-        GAIN_INC = {0: 0.1, 1: 0.01, 2: 0.01}
+    # Gain selection: 0 = P, 1 = I, 2 = D (select with D-pad left/right)
+    gain_sel = 0
+    # Increments for each gain type
+    GAIN_INC = {0: 0.1, 1: 0.01, 2: 0.01}
         
-        print("\n" + "="*80)
-        print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
-        print("="*80)
-        print("\n🚨 EMERGENCY STOP:")
-        print("  TOUCHPAD:     Press touchpad/PS button to KILL system immediately")
-        print("  L3 + R3:      Press BOTH joysticks down simultaneously to KILL system")
-        print("\nCONTROL MODE SWITCHING:")
-        print("  Square:   Mode 0 - Open-loop test sequence")
-        print("  Cross:    Mode 1 - Bluetooth controller (manual)")
-        print("  Circle:   Mode 2 - Balance PID")
-        print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
-        print("\nADDITIONAL CONTROLS:")
-        print("  R1:       Reset IMU reference (set current position as upright)")
-        print("\nGAIN TUNING (Inner Loop):")
-        print("  D-Pad Left/Right: Select parameter (P, I, D)")
-        print("  D-Pad Up/Down:    Increase / Decrease the selected parameter")
-        print("    - P increment: 0.10")
-        print("    - I increment: 0.01")
-        print("    - D increment: 0.01")
-        print(f"\nStarting in Mode {control_mode}")
-        print(f"Initial Inner Loop Gains: Kp={inner_pid_x.Kp:.2f}, Ki={inner_pid_x.Ki:.3f}, Kd={inner_pid_x.Kd:.3f}")
-        print("="*80 + "\n")
+    print("\n" + "="*80)
+    print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
+    print("="*80)
+    print("\n🚨 EMERGENCY STOP:")
+    print("  TOUCHPAD:     Press touchpad/PS button to KILL system immediately")
+    print("  L3 + R3:      Press BOTH joysticks down simultaneously to KILL system")
+    print("\nCONTROL MODE SWITCHING:")
+    print("  Square:   Mode 0 - Open-loop test sequence")
+    print("  Cross:    Mode 1 - Bluetooth controller (manual)")
+    print("  Circle:   Mode 2 - Balance PID")
+    print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
+    print("\nADDITIONAL CONTROLS:")
+    print("  R1:       Reset IMU reference (set current position as upright)")
+    print("\nGAIN TUNING (Inner Loop):")
+    print("  D-Pad Left/Right: Select parameter (P, I, D)")
+    print("  D-Pad Up/Down:    Increase / Decrease the selected parameter")
+    print("    - P increment: 0.10")
+    print("    - I increment: 0.01")
+    print("    - D increment: 0.01")
+    print(f"\nStarting in Mode {control_mode}")
+    print(f"Initial Inner Loop Gains: Kp={inner_pid_x.Kp:.2f}, Ki={inner_pid_x.Ki:.3f}, Kd={inner_pid_x.Kd:.3f}")
+    print("="*80 + "\n")
         
         # ====================================================================
         # MAIN CONTROL LOOP
         # ====================================================================
         
-        while True:
-            time.sleep(DT)
-            t_now = time.time() - t_start
-            i += 1
+    while True:
+        time.sleep(DT)
+        t_now = time.time() - t_start
+        i += 1
             
-            try:
+        try:
                 # ============================================================
                 # SENSOR DATA ACQUISITION
                 # ============================================================
@@ -781,54 +838,54 @@ def main():
                 touchpad = bt_signals["touchpad"]  # Touchpad/PS button press
                 
                 # ============================================================
-                # EMERGENCY STOP
-                # ============================================================
-                
-                # Check for emergency stop conditions:
-                # 1. Touchpad/PS button pressed
-                # 2. Both L3 AND R3 pressed simultaneously
-                emergency_stop = touchpad == 1 or (but_L3 == 1 and but_R3 == 1)
-                
-                if emergency_stop:
-                    # Immediately stop all motors
-                    command.pwm = [0.0, 0.0, 0.0]
-                    lc.publish("MBOT_MOTOR_PWM", command.encode())
-                    
-                    print("\n" + "!"*80)
-                    print("!!! EMERGENCY STOP ACTIVATED !!!")
-                    if touchpad == 1:
-                        print("!!! Triggered by: TOUCHPAD PRESS !!!")
-                    else:
-                        print("!!! Triggered by: L3 + R3 PRESS !!!")
-                    print("!"*80)
-                    print("\nAll motors stopped. Exiting control loop safely...")
-                    print("System halted.\n")
-                    
-                    # Exit the control loop
-                    break
-                
-                # ============================================================
-                # REFERENCE RESET (R1 button)
-                # ============================================================
-                
-                # Reset IMU reference orientation when R1 is pressed
-                if shoulder_R1 == 1:
-                    theta_x_0 = msg.imu_angles_rpy[0]
-                    theta_y_0 = msg.imu_angles_rpy[1]
-                    theta_z_0 = msg.imu_angles_rpy[2]
-                    print("\n>>> IMU REFERENCE RESET - Current position set as upright <<<\n")
-                
-                # ============================================================
-                # DYNAMIC GAIN TUNING (D-pad with debouncing and cooldown)
-                # ============================================================
-                
-                current_time = time.time()
-                gain_changed = False
-                selection_changed = False
+                command = mbot_motor_pwm_t()
 
-                # Terminal highlight helpers - use bright yellow for visibility
-                H_START = '\033[1;33m'  # bold yellow
-                H_END = '\033[0m'
+                # Control loop counters and timing
+                i = 0
+                t_start = time.time()
+                t_now = 0
+
+                # Store initial encoder positions for relative measurement
+                enc_pos_1_start = msg.enc_ticks[0]
+                enc_pos_2_start = msg.enc_ticks[1]
+                enc_pos_3_start = msg.enc_ticks[2]
+
+                # Store initial IMU orientation as reference frame
+                theta_x_0 = msg.imu_angles_rpy[0]
+                theta_y_0 = msg.imu_angles_rpy[1]
+                theta_z_0 = msg.imu_angles_rpy[2]
+                # Initialize IMU filter state (start from zero offset)
+                imu_filt_x = 0.0
+                imu_filt_y = 0.0
+                imu_filt_z = 0.0
+
+                # Initialize control variables
+                Tx = Ty = Tz = 0.0
+                u1 = u2 = u3 = 0.0
+                theta_d_x = theta_d_y = 0.0
+
+                # Previous position for velocity estimation
+                prev_x = prev_y = 0.0
+
+                # Mode switching state tracking
+                control_mode = CONTROL_MODE  # Local variable for dynamic mode switching
+                prev_but_tri = 0  # Previous state of triangle button
+                prev_but_sq = 0   # Previous state of square button
+                prev_but_cir = 0  # Previous state of circle button
+                prev_but_x = 0    # Previous state of cross button
+                mode_start_time = t_start  # Track when current mode was entered
+
+                    # Gain tuning state tracking (debouncing for D-pad)
+                    prev_dpad_up = 0
+                    prev_dpad_down = 0
+                    prev_dpad_right = 0
+                    prev_dpad_left = 0
+                    last_gain_change_time = 0  # Timestamp of last gain change
+                    GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
+
+                    # Gain selection: 0 = P, 1 = I, 2 = D (select with D-pad left/right)
+                    gain_sel = 0
+                    # Increments for each gain type
 
                 # Check if enough time has passed since last gain change (cooldown)
                 if current_time - last_gain_change_time > GAIN_CHANGE_COOLDOWN:
@@ -1065,11 +1122,8 @@ def main():
                 
                 # Convert Cartesian torques to individual motor commands
                 u1, u2, u3 = calc_torque_conv(Tx, Ty, Tz)
-                
-                # Apply safety limits
-                u1 = func_clip(u1, PWM_MIN, PWM_MAX)
-                u2 = func_clip(u2, PWM_MIN, PWM_MAX)
-                u3 = func_clip(u3, PWM_MIN, PWM_MAX)
+                # Smooth and clip PWM commands using pwm_smooth
+                u1, u2, u3 = pwm_smooth(u1, u2, u3, DT, enable=True)
                 
                 # ============================================================
                 # MOTOR COMMAND TRANSMISSION
@@ -1144,12 +1198,12 @@ def main():
                         f"innerPID(Kp={kp_s}, Ki={ki_s}, Kd={kd_s})"
                     )
             
-            except KeyError as e:
-                print(f"WARNING: Waiting for sensor data... (missing key: {e})")
-                continue
-            except Exception as e:
-                print(f"ERROR in control loop: {e}")
-                continue
+        except KeyError as e:
+            print(f"WARNING: Waiting for sensor data... (missing key: {e})")
+            continue
+        except Exception as e:
+            print(f"ERROR in control loop: {e}")
+            continue
     
     # ========================================================================
     # EXCEPTION HANDLING AND SHUTDOWN
