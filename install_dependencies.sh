@@ -19,6 +19,9 @@ fi
 echo "Installing numpy..."
 pip3 install --break-system-packages numpy
 
+echo "Installing scipy..."
+pip3 install --break-system-packages scipy
+
 echo "Installing lcm (Lightweight Communications and Marshalling)..."
 pip3 install --break-system-packages lcm
 
@@ -28,6 +31,7 @@ echo "Installation complete!"
 echo ""
 echo "Installed packages:"
 echo "  - numpy: Numerical computing library (used by control algorithms)"
+echo "  - scipy: Scientific computing library (for LQR controller)"
 echo "  - lcm: Lightweight Communications and Marshalling (robot messaging)"
 echo ""
 echo "Additional requirements:"

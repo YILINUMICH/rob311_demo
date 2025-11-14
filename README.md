@@ -76,6 +76,8 @@ python3 test_BT.py
 ```bash
 cd control
 python3 ballbot_control_cascaded_pid.py
+python3 ballbot_control_auto_pid.py   # Auto-tunes inner PID, no steering/outer loop
+python3 ballbot_control_lqr.py        # LQR+EKF optimal control, no tuning needed
 ```
 
 PID gains are automatically saved and loaded from `pid_gains.json`.
@@ -107,6 +109,8 @@ IMU data visualization is now done via network connection - no X11 forwarding ne
 
 ### Control (`control/`)
 - **ballbot_control_cascaded_pid.py** - Cascaded PID control with gain persistence
+- **ballbot_control_auto_pid.py** - Balancing-only controller that auto-tunes inner PID gains (no steering, no outer loop)
+- **ballbot_control_lqr.py** - LQR+EKF optimal state-feedback controller with Kalman filtering (no manual tuning)
 - **pid_gains.json** - Saved PID tuning parameters (auto-saved on exit)
 - **ballbot_control.py** - Basic ball-bot control implementation
 - **ballbot_control_lab-07-08 solution.py** - Lab solution reference
@@ -126,6 +130,7 @@ IMU data visualization is now done via network connection - no X11 forwarding ne
 ### Robot (Raspberry Pi)
 - Python 3.x
 - numpy - Numerical computing
+- scipy - Scientific computing (for LQR controller)
 - lcm - Lightweight Communications and Marshalling
 - mbot_lcm_msgs - Custom robot message types
 - json - Data serialization (built-in)
