@@ -67,6 +67,9 @@ YAW_RATE_MAX = 2.0  # Maximum yaw rate [rad/s]
 
 # Sensor Filtering
 IMU_DEADZONE = np.radians(0.05)  # IMU angle deadzone [rad] (0.05 degrees) - ignore small angles to reduce noise
+IMU_LP_CUTOFF_HZ = 12.0  # Low-pass cutoff frequency for IMU angles [Hz]
+# Precompute low-pass filter alpha using RC filter: alpha = dt / (RC + dt), RC = 1/(2*pi*fc)
+IMU_LP_ALPHA = (DT / ((1.0 / (2.0 * np.pi * IMU_LP_CUTOFF_HZ)) + DT))
 
 # ============================================================================
 # GLOBAL VARIABLES FOR LCM COMMUNICATION
@@ -514,7 +517,7 @@ def main():
     # OUTPUT: Desired lean angle (theta_d_x, theta_d_y) → fed to inner loop
     #
     # Tuning notes:
-    # - X and Y axes may need different gains
+    # - X and Y axes use same gains for simplicity
     # - Lower gains = smoother but slower position tracking
     # - Higher gains = faster tracking but may cause oscillation
     
@@ -522,7 +525,7 @@ def main():
     
     # X-axis (Forward/Backward velocity control)
     outer_pid_x = PIDController(
-        Kp=0.3, Ki=0.05, Kd=0.8,  # Tune these independently for X axis
+        Kp=0.30, Ki=0.05, Kd=0.80,
         dt=DT * OUTER_LOOP_DECIMATION,
         integral_limit=2.0,
         output_limit=(-THETA_MAX, THETA_MAX)
@@ -530,7 +533,7 @@ def main():
     
     # Y-axis (Left/Right velocity control)
     outer_pid_y = PIDController(
-        Kp=0.3, Ki=0.05, Kd=0.8,  # Tune these independently for Y axis
+        Kp=0.30, Ki=0.05, Kd=0.80,
         dt=DT * OUTER_LOOP_DECIMATION,
         integral_limit=2.0,
         output_limit=(-THETA_MAX, THETA_MAX)
@@ -556,7 +559,7 @@ def main():
     data_header = [
         "i",           # Iteration counter
         "t_now",       # Elapsed time [s]
-        "control_mode",  # Control mode (0=test, 1=manual, 2=balance, 3=cascaded)
+        "control_mode",  # Control mode (0=cascaded, 1=manual, 2=balance)
         "Tx", "Ty", "Tz",  # Commanded torques
         "u1", "u2", "u3",  # Motor PWM commands
         "theta_x", "theta_y", "theta_z",  # IMU angles [rad]
@@ -603,6 +606,12 @@ def main():
         # Previous position for velocity estimation
         prev_x = prev_y = 0.0
         
+        # IMU low-pass filter state
+        imu_filt_initialized = False
+        theta_x_f = 0.0
+        theta_y_f = 0.0
+        theta_z_f = 0.0
+        
         # Mode switching state tracking
         control_mode = CONTROL_MODE  # Local variable for dynamic mode switching
         prev_but_tri = 0  # Previous state of triangle button
@@ -622,16 +631,16 @@ def main():
         # Gain selection: 0 = P, 1 = I, 2 = D
         gain_sel = 0
         # Increments for each gain type
-        GAIN_INC = {0: 0.1, 1: 0.1, 2: 0.1}
+        GAIN_INC = {0: 0.1, 1: 0.1, 2: 0.01}
         
         print("\n" + "="*80)
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
         print("="*80)
         print("\nCONTROL MODE SWITCHING:")
-        print("  Square:   Mode 0 - Open-loop test sequence")
+        print("  Square:   Mode 0 - Cascaded PID (outer + inner loops with manual tuned gains)")
         print("  Cross:    Mode 1 - Manual control (direct controller to motors)")
         print("  Circle:   Mode 2 - Balance PID (use D-pad to tune P/I/D gains)")
-        print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
+        print("  Triangle: Mode 2 - Balance PID (alias)")
         print("\nADDITIONAL CONTROLS:")
         print("  R1:       Reset IMU reference (set current position as upright)")
         print("\nMODE 2 GAIN TUNING:")
@@ -659,10 +668,21 @@ def main():
                 theta_y_raw = msg.imu_angles_rpy[1] - theta_y_0  # Roll
                 theta_z_raw = msg.imu_angles_rpy[2] - theta_z_0  # Yaw
                 
+                # Low-pass filter IMU angles, then apply deadzone
+                if not imu_filt_initialized:
+                    theta_x_f = theta_x_raw
+                    theta_y_f = theta_y_raw
+                    theta_z_f = theta_z_raw
+                    imu_filt_initialized = True
+                else:
+                    theta_x_f = theta_x_f + IMU_LP_ALPHA * (theta_x_raw - theta_x_f)
+                    theta_y_f = theta_y_f + IMU_LP_ALPHA * (theta_y_raw - theta_y_f)
+                    theta_z_f = theta_z_f + IMU_LP_ALPHA * (theta_z_raw - theta_z_f)
+
                 # Apply deadzone filter to reduce noise and prevent constant small corrections
-                theta_x = apply_deadzone(theta_x_raw, IMU_DEADZONE)
-                theta_y = apply_deadzone(theta_y_raw, IMU_DEADZONE)
-                theta_z = apply_deadzone(theta_z_raw, IMU_DEADZONE)
+                theta_x = apply_deadzone(theta_x_f, IMU_DEADZONE)
+                theta_y = apply_deadzone(theta_y_f, IMU_DEADZONE)
+                theta_z = apply_deadzone(theta_z_f, IMU_DEADZONE)
                 
                 # IMU angular velocities (gyroscope readings)
                 # WARNING: The message struct only has angles, not rates!
@@ -874,7 +894,7 @@ def main():
                     control_mode = 2  # Circle → Balance PID
                     mode_changed = True
                 elif but_tri == 1 and prev_but_tri == 0:
-                    control_mode = 3  # Triangle → Cascaded PID
+                    control_mode = 2  # Triangle → Balance PID (alias)
                     mode_changed = True
                 
                 # Update previous button states
@@ -900,25 +920,56 @@ def main():
                 
                 if control_mode == 0:
                     # --------------------------------------------------------
-                    # Mode 0: Open-loop test sequence
+                    # Mode 0: Cascaded PID (outer + inner loops with manual tuned gains)
                     # --------------------------------------------------------
-                    # Runs a predefined motion sequence for testing kinematics
+                    # Full cascaded control with position/velocity feedback
+                    # Uses manually tuned inner gains (separate for X/Y) and outer gains (same for X/Y)
                     
-                    # Use time since mode was entered for sequence timing
-                    mode_time = time.time() - mode_start_time
+                    # Apply manual tuned inner gains (different for X and Y axes)
+                    inner_pid_x.Kp = 17.0
+                    inner_pid_x.Ki = 1.5
+                    inner_pid_x.Kd = 0.30
                     
-                    if mode_time >= 9:
-                        Tx = Ty = Tz = 0  # Stop
-                    elif mode_time >= 6:
-                        Tx = Ty = 0
-                        Tz = 1  # Rotate only
-                    elif mode_time >= 3:
-                        Tx = 0
-                        Ty = 1  # Strafe left/right
-                        Tz = 0
+                    inner_pid_y.Kp = 18.5
+                    inner_pid_y.Ki = 1.5
+                    inner_pid_y.Kd = 0.35
+                    
+                    # Apply manual tuned outer gains (same for both axes)
+                    outer_pid_x.Kp = 0.30
+                    outer_pid_x.Ki = 0.05
+                    outer_pid_x.Kd = 0.80
+                    
+                    outer_pid_y.Kp = 0.30
+                    outer_pid_y.Ki = 0.05
+                    outer_pid_y.Kd = 0.80
+                    
+                    # Outer loop update (runs at reduced frequency)
+                    if i % OUTER_LOOP_DECIMATION == 0:
+                        # Set desired velocity from controller or autonomous planner
+                        dx_d = js_R_y * VELOCITY_MAX
+                        dy_d = js_R_x * VELOCITY_MAX
+                        
+                        # Outer loop: velocity error → desired lean angle
+                        theta_d_x = outer_pid_x.update(dx_d, dx)
+                        theta_d_y = outer_pid_y.update(dy_d, dy)
+                        
+                        # Safety: clamp lean angle setpoint
+                        theta_d_x = func_clip(theta_d_x, -THETA_MAX, THETA_MAX)
+                        theta_d_y = func_clip(theta_d_y, -THETA_MAX, THETA_MAX)
+                    
+                    # Inner loop update (runs every iteration)
+                    # Attitude control: lean angle error → motor torque
+                    # Note: theta_x/theta_y from IMU may be swapped relative to robot frame
+                    # Swapping the mapping: theta_x → Ty, theta_y → Tx
+                    Ty = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
+                    Tx = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
+                    
+                    # Yaw control (independent) - only control if triggers are pressed
+                    if abs(trigger_R2 - trigger_L2) > 0.05:  # Deadzone for triggers
+                        dpsi_d = (trigger_R2 - trigger_L2) * YAW_RATE_MAX
+                        Tz = yaw_pid.update(dpsi_d, dtheta_z)
                     else:
-                        Tx = 1  # Drive forward
-                        Ty = Tz = 0
+                        Tz = 0.0  # No yaw control if triggers not pressed
                         
                 elif control_mode == 1:
                     # --------------------------------------------------------
@@ -969,40 +1020,6 @@ def main():
                     else:
                         Tz = 0.0  # No yaw control if triggers not pressed
                     
-                elif control_mode == 3:
-                    # --------------------------------------------------------
-                    # Mode 3: Cascaded PID control (autonomous balance)
-                    # --------------------------------------------------------
-                    # Full cascaded control with position/velocity feedback
-                    
-                    # Outer loop update (runs at reduced frequency)
-                    if i % OUTER_LOOP_DECIMATION == 0:
-                        # Set desired velocity from controller or autonomous planner
-                        dx_d = js_R_y * VELOCITY_MAX
-                        dy_d = js_R_x * VELOCITY_MAX
-                        
-                        # Outer loop: velocity error → desired lean angle
-                        theta_d_x = outer_pid_x.update(dx_d, dx)
-                        theta_d_y = outer_pid_y.update(dy_d, dy)
-                        
-                        # Safety: clamp lean angle setpoint
-                        theta_d_x = func_clip(theta_d_x, -THETA_MAX, THETA_MAX)
-                        theta_d_y = func_clip(theta_d_y, -THETA_MAX, THETA_MAX)
-                    
-                    # Inner loop update (runs every iteration)
-                    # Attitude control: lean angle error → motor torque
-                    # Note: theta_x/theta_y from IMU may be swapped relative to robot frame
-                    # Swapping the mapping: theta_x → Ty, theta_y → Tx
-                    Ty = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
-                    Tx = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
-                    
-                    # Yaw control (independent) - only control if triggers are pressed
-                    if abs(trigger_R2 - trigger_L2) > 0.05:  # Deadzone for triggers
-                        dpsi_d = (trigger_R2 - trigger_L2) * YAW_RATE_MAX
-                        Tz = yaw_pid.update(dpsi_d, dtheta_z)
-                    else:
-                        Tz = 0.0  # No yaw control if triggers not pressed
-                
                 else:
                     print(f"ERROR: Invalid control mode {control_mode}")
                     Tx = Ty = Tz = 0
@@ -1058,7 +1075,7 @@ def main():
                 # ============================================================
                 
                 if i % 10 == 0:
-                    mode_names = ["Test Seq", "Manual", "Balance", "Cascaded"]
+                    mode_names = ["Cascaded", "Manual", "Balance"]
                     print(
                         f"[{mode_names[control_mode]}] "
                         f"t={t_now:.2f}s | "
