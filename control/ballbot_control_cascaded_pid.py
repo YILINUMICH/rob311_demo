@@ -26,6 +26,7 @@ import threading
 import numpy as np
 import sys
 import os
+import json
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
 
@@ -65,7 +66,7 @@ VELOCITY_MAX = 1.0  # Maximum commanded velocity [m/s]
 YAW_RATE_MAX = 2.0  # Maximum yaw rate [rad/s]
 
 # Sensor Filtering
-IMU_DEADZONE = np.radians(0.5)  # IMU angle deadzone [rad] (0.5 degrees) - ignore small angles to reduce noise
+IMU_DEADZONE = np.radians(0.05)  # IMU angle deadzone [rad] (0.05 degrees) - ignore small angles to reduce noise
 
 # ============================================================================
 # GLOBAL VARIABLES FOR LCM COMMUNICATION
@@ -164,8 +165,9 @@ def calc_torque_conv(Tx, Ty, Tz):
         u1, u2, u3: Motor command signals for wheels 1, 2, 3
         
     Troubleshooting:
-    - If robot moves in wrong direction, check motor wiring/polarity
-    - If rotation is wrong, verify encoder directions match motor directions
+    - If script directly crashed, check for TYPOs
+        - pi should be np.pi
+        - cos should be np.cos 
     """
     # Geometric transformation matrix for 120° spaced omniwheels
     u1 = (1/3) * (Tz - (1/np.cos(np.pi/4)) * (2*Ty))
@@ -191,10 +193,6 @@ def calc_kinematic_conv(psi1, psi2, psi3):
         phiz: Ball rotation about Z-axis [rad]
         
     Note: Multiply by R_K to get linear displacement (x = phix * R_K)
-    
-    Troubleshooting:
-    - Inconsistent odometry = check for wheel slippage on ball
-    - Drift over time = normal for dead reckoning, use IMU for absolute attitude
     """
     # Forward kinematics for omnidirectional base
     phix = (R_W / R_K) * np.sqrt(2/3) * (psi2 - psi3)
@@ -217,6 +215,8 @@ def func_clip(x, lim_lo, lim_hi):
         
     Returns:
         Clipped value
+
+    Make sure you implement this function correctly to prevent over powering the motors
     """
     if x > lim_hi:
         return lim_hi
@@ -348,6 +348,70 @@ class PIDController:
 
 
 # ============================================================================
+# PID GAINS SAVE/LOAD FUNCTIONS
+# ============================================================================
+
+def save_pid_gains(inner_x, inner_y, outer_x, outer_y, yaw, filename='pid_gains.json'):
+    """
+    Save PID gains to a JSON file for persistence across runs.
+    
+    Args:
+        inner_x: Inner loop X-axis PIDController
+        inner_y: Inner loop Y-axis PIDController
+        outer_x: Outer loop X-axis PIDController
+        outer_y: Outer loop Y-axis PIDController
+        yaw: Yaw PIDController
+        filename: Path to save gains file
+    """
+    gains = {
+        'inner_x': {'Kp': inner_x.Kp, 'Ki': inner_x.Ki, 'Kd': inner_x.Kd},
+        'inner_y': {'Kp': inner_y.Kp, 'Ki': inner_y.Ki, 'Kd': inner_y.Kd},
+        'outer_x': {'Kp': outer_x.Kp, 'Ki': outer_x.Ki, 'Kd': outer_x.Kd},
+        'outer_y': {'Kp': outer_y.Kp, 'Ki': outer_y.Ki, 'Kd': outer_y.Kd},
+        'yaw': {'Kp': yaw.Kp, 'Ki': yaw.Ki, 'Kd': yaw.Kd}
+    }
+    
+    try:
+        with open(filename, 'w') as f:
+            json.dump(gains, f, indent=4)
+        print(f"✓ PID gains saved to {filename}")
+    except Exception as e:
+        print(f"✗ Failed to save PID gains: {e}")
+
+
+def load_pid_gains(filename='pid_gains.json'):
+    """
+    Load PID gains from a JSON file, or return defaults if file doesn't exist.
+    
+    Args:
+        filename: Path to gains file
+        
+    Returns:
+        Dictionary containing PID gains for all controllers
+    """
+    # Default gains (used if file doesn't exist)
+    defaults = {
+        'inner_x': {'Kp': 12.0, 'Ki': 0.0, 'Kd': 1.0},
+        'inner_y': {'Kp': 12.0, 'Ki': 0.0, 'Kd': 1.0},
+        'outer_x': {'Kp': 0.3, 'Ki': 0.05, 'Kd': 0.8},
+        'outer_y': {'Kp': 0.3, 'Ki': 0.05, 'Kd': 0.8},
+        'yaw': {'Kp': 0.5, 'Ki': 0.1, 'Kd': 0.05}
+    }
+    
+    try:
+        with open(filename, 'r') as f:
+            gains = json.load(f)
+        print(f"✓ PID gains loaded from {filename}")
+        return gains
+    except FileNotFoundError:
+        print(f"ℹ No saved gains found, using defaults")
+        return defaults
+    except Exception as e:
+        print(f"✗ Failed to load PID gains: {e}, using defaults")
+        return defaults
+
+
+# ============================================================================
 # MAIN CONTROL LOOP
 # ============================================================================
 
@@ -403,8 +467,12 @@ def main():
     print("✓ PS4 Controller initialized")
     
     # ========================================================================
+    # ========================================================================
     # CONTROLLER INITIALIZATION
     # ========================================================================
+    
+    # Load PID gains from file (or use defaults if file doesn't exist)
+    gains = load_pid_gains('pid_gains.json')
     
     # Inner loop controllers (attitude stabilization) - FAST
     # These run at full 200 Hz and directly control motor torques
@@ -421,7 +489,9 @@ def main():
     # X-axis (Forward/Backward - Pitch)
     # Note: Sign may need adjustment based on IMU mounting orientation
     inner_pid_x = PIDController(
-        Kp=12.0, Ki=0.0, Kd=1.0,
+        Kp=gains['inner_x']['Kp'],
+        Ki=gains['inner_x']['Ki'],
+        Kd=gains['inner_x']['Kd'],
         dt=DT, 
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
@@ -430,12 +500,13 @@ def main():
     # Y-axis (Left/Right - Roll)
     # Note: Sign may need adjustment based on IMU mounting orientation
     inner_pid_y = PIDController(
-        Kp=12.0, Ki=0.0, Kd=1.0,
+        Kp=gains['inner_y']['Kp'],
+        Ki=gains['inner_y']['Ki'],
+        Kd=gains['inner_y']['Kd'],
         dt=DT,
         integral_limit=0.5,
         output_limit=(-PWM_MAX, PWM_MAX)
     )
-    
     # Outer loop controllers (position/velocity control) - SLOW  
     # These run at reduced rate (e.g., 50 Hz) and command desired lean angles
     # PURPOSE: Control position/velocity by commanding lean angles to inner loop
@@ -535,16 +606,32 @@ def main():
         prev_but_x = 0    # Previous state of cross button
         mode_start_time = t_start  # Track when current mode was entered
         
+        # Gain tuning state tracking (for D-pad in Mode 2)
+        prev_dpad_up = 0
+        prev_dpad_down = 0
+        prev_dpad_right = 0
+        prev_dpad_left = 0
+        last_gain_change_time = 0  # Timestamp of last gain change
+        GAIN_CHANGE_COOLDOWN = 0.12  # Minimum time between gain changes [seconds]
+        
+        # Gain selection: 0 = P, 1 = I, 2 = D
+        gain_sel = 0
+        # Increments for each gain type
+        GAIN_INC = {0: 0.1, 1: 0.1, 2: 0.1}
+        
         print("\n" + "="*80)
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
         print("="*80)
         print("\nCONTROL MODE SWITCHING:")
         print("  Square:   Mode 0 - Open-loop test sequence")
-        print("  Cross:    Mode 1 - Bluetooth controller (manual)")
-        print("  Circle:   Mode 2 - Balance PID")
+        print("  Cross:    Mode 1 - Manual control (direct controller to motors)")
+        print("  Circle:   Mode 2 - Balance PID (use D-pad to tune P/I/D gains)")
         print("  Triangle: Mode 3 - Cascaded PID (autonomous)")
         print("\nADDITIONAL CONTROLS:")
         print("  R1:       Reset IMU reference (set current position as upright)")
+        print("\nMODE 2 GAIN TUNING:")
+        print("  D-Pad Left/Right: Select parameter (P <-> I <-> D)")
+        print("  D-Pad Up/Down:    Increase/Decrease selected gain (increment: 0.1)")
         print(f"\nStarting in Mode {control_mode}")
         print("="*80 + "\n")
         
@@ -642,6 +729,12 @@ def main():
                 # Shoulder buttons
                 shoulder_R1 = bt_signals["shoulder_R1"]  # R1 for reference reset
                 
+                # D-pad buttons for gain tuning
+                dpad_up = bt_signals["dir_U"]      # Increase gain
+                dpad_down = bt_signals["dir_D"]    # Decrease gain
+                dpad_right = bt_signals["dir_R"]  # Next parameter (P->I->D->P)
+                dpad_left = bt_signals["dir_L"]    # Previous parameter (D->I->P->D)
+                
                 # ============================================================
                 # REFERENCE RESET (R1 button)
                 # ============================================================
@@ -654,9 +747,94 @@ def main():
                     print("\n>>> IMU REFERENCE RESET - Current position set as upright <<<\n")
                 
                 # ============================================================
-                # CONTROL MODE SWITCHING (with debouncing)
+                # D-PAD GAIN TUNING (for Mode 2 Balance PID)
                 # ============================================================
                 
+                # Only allow gain tuning in Mode 2 (Balance PID)
+                if control_mode == 2:
+                    current_time = time.time()
+                    gain_changed = False
+                    selection_changed = False
+                    
+                    # Terminal highlight helpers
+                    H_START = '\033[1;33m'  # bold yellow
+                    H_END = '\033[0m'
+                    
+                    # Check cooldown to prevent rapid changes
+                    if current_time - last_gain_change_time > GAIN_CHANGE_COOLDOWN:
+                        # Selection: Left/Right to cycle through P, I, D
+                        if dpad_left == 1 and prev_dpad_left == 0:
+                            gain_sel = (gain_sel - 1) % 3
+                            selection_changed = True
+                            last_gain_change_time = current_time
+                        elif dpad_right == 1 and prev_dpad_right == 0:
+                            gain_sel = (gain_sel + 1) % 3
+                            selection_changed = True
+                            last_gain_change_time = current_time
+                        # Adjust selected gain with Up/Down
+                        elif dpad_up == 1 and prev_dpad_up == 0:
+                            inc = GAIN_INC.get(gain_sel, 0.1)
+                            if gain_sel == 0:
+                                inner_pid_x.Kp += inc
+                                inner_pid_y.Kp += inc
+                            elif gain_sel == 1:
+                                inner_pid_x.Ki += inc
+                                inner_pid_y.Ki += inc
+                            elif gain_sel == 2:
+                                inner_pid_x.Kd += inc
+                                inner_pid_y.Kd += inc
+                            gain_changed = True
+                            last_gain_change_time = current_time
+                        elif dpad_down == 1 and prev_dpad_down == 0:
+                            inc = GAIN_INC.get(gain_sel, 0.1)
+                            if gain_sel == 0:
+                                inner_pid_x.Kp = max(0.0, inner_pid_x.Kp - inc)
+                                inner_pid_y.Kp = max(0.0, inner_pid_y.Kp - inc)
+                            elif gain_sel == 1:
+                                inner_pid_x.Ki = max(0.0, inner_pid_x.Ki - inc)
+                                inner_pid_y.Ki = max(0.0, inner_pid_y.Ki - inc)
+                            elif gain_sel == 2:
+                                inner_pid_x.Kd = max(0.0, inner_pid_x.Kd - inc)
+                                inner_pid_y.Kd = max(0.0, inner_pid_y.Kd - inc)
+                            gain_changed = True
+                            last_gain_change_time = current_time
+                    
+                    # Update previous D-pad states
+                    prev_dpad_up = dpad_up
+                    prev_dpad_down = dpad_down
+                    prev_dpad_right = dpad_right
+                    prev_dpad_left = dpad_left
+                    
+                    # Print selection or gain update message
+                    if selection_changed:
+                        sel_name = ['P', 'I', 'D'][gain_sel]
+                        kp_s = f"{inner_pid_x.Kp:.2f}"
+                        ki_s = f"{inner_pid_x.Ki:.2f}"
+                        kd_s = f"{inner_pid_x.Kd:.2f}"
+                        if gain_sel == 0:
+                            kp_s = H_START + kp_s + H_END
+                        elif gain_sel == 1:
+                            ki_s = H_START + ki_s + H_END
+                        elif gain_sel == 2:
+                            kd_s = H_START + kd_s + H_END
+                        print(f"\n[SELECTED: {H_START}{sel_name}{H_END}] Kp={kp_s}, Ki={ki_s}, Kd={kd_s}\n")
+                    elif gain_changed:
+                        kp_s = f"{inner_pid_x.Kp:.2f}"
+                        ki_s = f"{inner_pid_x.Ki:.2f}"
+                        kd_s = f"{inner_pid_x.Kd:.2f}"
+                        if gain_sel == 0:
+                            kp_s = H_START + kp_s + H_END
+                        elif gain_sel == 1:
+                            ki_s = H_START + ki_s + H_END
+                        elif gain_sel == 2:
+                            kd_s = H_START + kd_s + H_END
+                        print(f"\n>>> GAINS UPDATED: Kp={kp_s}, Ki={ki_s}, Kd={kd_s} <<<\n")
+                        # Save updated gains to file
+                        save_pid_gains(inner_pid_x, inner_pid_y, outer_pid_x, outer_pid_y, yaw_pid, 'pid_gains.json')
+                
+                # ============================================================
+                # CONTROL MODE SWITCHING (with debouncing)
+                # ============================================================
                 # Detect button press (rising edge) and switch modes
                 mode_changed = False
                 
@@ -718,9 +896,10 @@ def main():
                         
                 elif control_mode == 1:
                     # --------------------------------------------------------
-                    # Mode 1: Bluetooth controller (manual operation)
+                    # Mode 1: Manual control (direct controller to motors)
                     # --------------------------------------------------------
-                    # Direct mapping from joystick to torque commands
+                    # Convert controller signals directly to Tx, Ty, Tz
+                    # This bypasses PID and gives direct control
                     
                     Tx = js_R_y  # Forward/backward
                     Ty = js_R_x  # Left/right
@@ -850,12 +1029,11 @@ def main():
                 if i % 10 == 0:
                     mode_names = ["Test Seq", "Manual", "Balance", "Cascaded"]
                     print(
-                        f"[Mode {control_mode}:{mode_names[control_mode]}] "
+                        f"[{mode_names[control_mode]}] "
                         f"t={t_now:.2f}s | "
-                        f"T=[{Tx:.2f}, {Ty:.2f}, {Tz:.2f}] | "
                         f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
-                        f"v=[{dx:.2f}, {dy:.2f}] m/s"
+                        f"PID(Kp={inner_pid_x.Kp:.2f}, Ki={inner_pid_x.Ki:.2f}, Kd={inner_pid_x.Kd:.2f})"
                     )
             
             except KeyError as e:
@@ -897,8 +1075,11 @@ def main():
         dl.writeOut()
         print("✓ Data saved successfully")
         
+        # Save PID gains
+        print("\n→ Saving PID gains...")
+        save_pid_gains(inner_pid_x, inner_pid_y, outer_pid_x, outer_pid_y, yaw_pid, 'pid_gains.json')
+        
         # Stop LCM listener thread
-        listening = False
         print("\n→ Stopping LCM listener...")
         listener_thread.join(timeout=1)
         if listener_thread.is_alive():
