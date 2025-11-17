@@ -556,7 +556,6 @@ def main():
     data_header = [
         "i",           # Iteration counter
         "t_now",       # Elapsed time [s]
-        "control_mode",  # Control mode (0=test, 1=manual, 2=balance, 3=cascaded)
         "Tx", "Ty", "Tz",  # Commanded torques
         "u1", "u2", "u3",  # Motor PWM commands
         "theta_x", "theta_y", "theta_z",  # IMU angles [rad]
@@ -565,11 +564,7 @@ def main():
         "phi_x", "phi_y",  # Ball position (odometry) [rad]
         "x", "y",  # Linear position [m]
         "dx", "dy",  # Linear velocity [m/s]
-        "theta_d_x", "theta_d_y",  # Desired lean angles [rad]
-        "inner_x_Kp", "inner_x_Ki", "inner_x_Kd",  # Inner X PID gains
-        "inner_y_Kp", "inner_y_Ki", "inner_y_Kd",  # Inner Y PID gains
-        "outer_x_Kp", "outer_x_Ki", "outer_x_Kd",  # Outer X PID gains
-        "outer_y_Kp", "outer_y_Ki", "outer_y_Kd"   # Outer Y PID gains
+        "theta_d_x", "theta_d_y"  # Desired lean angles [rad]
     ]
     dl.appendData([" ".join(data_header)])
     
@@ -734,10 +729,6 @@ def main():
                 # Shoulder buttons
                 shoulder_R1 = bt_signals["shoulder_R1"]  # R1 for reference reset
                 
-                # Joystick buttons (L3/R3) for emergency stop
-                but_L3 = bt_signals.get("but_L3", 0)  # Left joystick press
-                but_R3 = bt_signals.get("but_R3", 0)  # Right joystick press
-                
                 # D-pad buttons for gain tuning
                 dpad_up = bt_signals["dir_U"]      # Increase gain
                 dpad_down = bt_signals["dir_D"]    # Decrease gain
@@ -754,23 +745,6 @@ def main():
                     theta_y_0 = msg.imu_angles_rpy[1]
                     theta_z_0 = msg.imu_angles_rpy[2]
                     print("\n>>> IMU REFERENCE RESET - Current position set as upright <<<\n")
-                
-                # ============================================================
-                # EMERGENCY STOP (L3 + R3 pressed simultaneously)
-                # ============================================================
-                
-                if but_L3 == 1 and but_R3 == 1:
-                    print("\n\n" + "="*80)
-                    print("!!! EMERGENCY STOP TRIGGERED (L3+R3) !!!")
-                    print("="*80)
-                    command = mbot_motor_pwm_t()
-                    command.utime = int(time.time() * 1e6)
-                    command.pwm[0] = 0.0
-                    command.pwm[1] = 0.0
-                    command.pwm[2] = 0.0
-                    lc.publish("MBOT_MOTOR_PWM_CMD", command.encode())
-                    print("✓ Motors stopped - exiting control loop\n")
-                    break
                 
                 # ============================================================
                 # D-PAD GAIN TUNING (for Mode 2 Balance PID)
@@ -1036,7 +1010,6 @@ def main():
                 
                 data = [
                     i, t_now,
-                    control_mode,
                     Tx, Ty, Tz,
                     u1, u2, u3,
                     theta_x, theta_y, theta_z,
@@ -1045,11 +1018,7 @@ def main():
                     phi_x, phi_y,
                     x, y,
                     dx, dy,
-                    theta_d_x, theta_d_y,
-                    inner_pid_x.Kp, inner_pid_x.Ki, inner_pid_x.Kd,
-                    inner_pid_y.Kp, inner_pid_y.Ki, inner_pid_y.Kd,
-                    outer_pid_x.Kp, outer_pid_x.Ki, outer_pid_x.Kd,
-                    outer_pid_y.Kp, outer_pid_y.Ki, outer_pid_y.Kd
+                    theta_d_x, theta_d_y
                 ]
                 dl.appendData(data)
                 
