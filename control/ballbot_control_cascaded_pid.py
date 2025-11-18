@@ -614,6 +614,7 @@ def main():
         
         # Mode switching state tracking
         control_mode = CONTROL_MODE  # Local variable for dynamic mode switching
+        use_cascaded = False  # Flag: True if Square pressed (cascaded), False if Circle/Triangle (simple balance)
         prev_but_tri = 0  # Previous state of triangle button
         prev_but_sq = 0   # Previous state of square button
         prev_but_cir = 0  # Previous state of circle button
@@ -637,10 +638,10 @@ def main():
         print("CONTROL LOOP ACTIVE - Press Ctrl+C to stop")
         print("="*80)
         print("\nCONTROL MODE SWITCHING:")
-        print("  Square:   Mode 0 - Cascaded PID (outer + inner loops with manual tuned gains)")
+        print("  Square:   Mode 2 - Cascaded PID (outer + inner loops with manual tuned gains)")
         print("  Cross:    Mode 1 - Manual control (direct controller to motors)")
-        print("  Circle:   Mode 2 - Balance PID (use D-pad to tune P/I/D gains)")
-        print("  Triangle: Mode 2 - Balance PID (alias)")
+        print("  Circle:   Mode 2 - Balance PID (inner loop only, use D-pad to tune)")
+        print("  Triangle: Mode 2 - Balance PID (alias for Circle)")
         print("\nADDITIONAL CONTROLS:")
         print("  R1:       Reset IMU reference (set current position as upright)")
         print("\nMODE 2 GAIN TUNING:")
@@ -884,16 +885,19 @@ def main():
                 mode_changed = False
                 
                 if but_sq == 1 and prev_but_sq == 0:
-                    control_mode = 0  # Square → Open-loop test
+                    control_mode = 2  # Square → Balance PID (cascaded with manual gains)
+                    use_cascaded = True  # Enable cascaded control with outer loop
                     mode_changed = True
                 elif but_x == 1 and prev_but_x == 0:
-                    control_mode = 1  # Cross → Bluetooth control
+                    control_mode = 1  # Cross → Manual control
                     mode_changed = True
                 elif but_cir == 1 and prev_but_cir == 0:
                     control_mode = 2  # Circle → Balance PID
+                    use_cascaded = False  # Simple balance without outer loop
                     mode_changed = True
                 elif but_tri == 1 and prev_but_tri == 0:
                     control_mode = 2  # Triangle → Balance PID (alias)
+                    use_cascaded = False  # Simple balance without outer loop
                     mode_changed = True
                 
                 # Update previous button states
@@ -917,60 +921,7 @@ def main():
                 # CONTROL MODE SELECTION
                 # ============================================================
                 
-                if control_mode == 0:
-                    # --------------------------------------------------------
-                    # Mode 0: Cascaded PID (outer + inner loops with manual tuned gains)
-                    # --------------------------------------------------------
-                    # Full cascaded control with position/velocity feedback
-                    # Uses manually tuned inner gains (separate for X/Y) and outer gains (same for X/Y)
-                    
-                    # Apply manual tuned inner gains (different for X and Y axes)
-                    inner_pid_x.Kp = 17.0
-                    inner_pid_x.Ki = 1.5
-                    inner_pid_x.Kd = 0.30
-                    
-                    inner_pid_y.Kp = 18.5
-                    inner_pid_y.Ki = 1.5
-                    inner_pid_y.Kd = 0.35
-                    
-                    # Apply manual tuned outer gains (same for both axes)
-                    outer_pid_x.Kp = 0.30
-                    outer_pid_x.Ki = 0.05
-                    outer_pid_x.Kd = 0.80
-                    
-                    outer_pid_y.Kp = 0.30
-                    outer_pid_y.Ki = 0.05
-                    outer_pid_y.Kd = 0.80
-                    
-                    # Outer loop update (runs at reduced frequency)
-                    if i % OUTER_LOOP_DECIMATION == 0:
-                        # Set desired velocity from controller or autonomous planner
-                        dx_d = js_R_y * VELOCITY_MAX
-                        dy_d = js_R_x * VELOCITY_MAX
-                        
-                        # Outer loop: velocity error → desired lean angle
-                        theta_d_x = outer_pid_x.update(dx_d, dx)
-                        theta_d_y = outer_pid_y.update(dy_d, dy)
-                        
-                        # Safety: clamp lean angle setpoint
-                        theta_d_x = func_clip(theta_d_x, -THETA_MAX, THETA_MAX)
-                        theta_d_y = func_clip(theta_d_y, -THETA_MAX, THETA_MAX)
-                    
-                    # Inner loop update (runs every iteration)
-                    # Attitude control: lean angle error → motor torque
-                    # Note: theta_x/theta_y from IMU may be swapped relative to robot frame
-                    # Swapping the mapping: theta_x → Ty, theta_y → Tx
-                    Ty = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
-                    Tx = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
-                    
-                    # Yaw control (independent) - only control if triggers are pressed
-                    if abs(trigger_R2 - trigger_L2) > 0.05:  # Deadzone for triggers
-                        dpsi_d = (trigger_R2 - trigger_L2) * YAW_RATE_MAX
-                        Tz = yaw_pid.update(dpsi_d, dtheta_z)
-                    else:
-                        Tz = 0.0  # No yaw control if triggers not pressed
-                        
-                elif control_mode == 1:
+                if control_mode == 1:
                     # --------------------------------------------------------
                     # Mode 1: Manual control (direct controller to motors)
                     # --------------------------------------------------------
@@ -983,19 +934,55 @@ def main():
                     
                 elif control_mode == 2:
                     # --------------------------------------------------------
-                    # Mode 2: Balance PID (attitude stabilization only)
+                    # Mode 2: Balance PID (cascaded or simple based on button pressed)
                     # --------------------------------------------------------
-                    # Simple balance control without position feedback
-                    # Robot will balance in place but may drift
                     
-                    # Target: keep robot upright (theta_d = 0)
-                    # Allow small manual lean commands from joystick for movement
-                    # Apply deadzone to joystick to prevent drift
-                    js_R_y_filtered = 0.0 if abs(js_R_y) < 0.1 else js_R_y
-                    js_R_x_filtered = 0.0 if abs(js_R_x) < 0.1 else js_R_x
-                    
-                    theta_d_x = js_R_y_filtered * 0.1  # Small lean angle command
-                    theta_d_y = js_R_x_filtered * 0.1
+                    if use_cascaded:
+                        # Cascaded control (Square button): outer + inner loops with manual tuned gains
+                        
+                        # Apply manual tuned inner gains (different for X and Y axes)
+                        inner_pid_x.Kp = 17.0
+                        inner_pid_x.Ki = 1.5
+                        inner_pid_x.Kd = 0.30
+                        
+                        inner_pid_y.Kp = 18.5
+                        inner_pid_y.Ki = 1.5
+                        inner_pid_y.Kd = 0.35
+                        
+                        # Apply manual tuned outer gains (same for both axes)
+                        outer_pid_x.Kp = 0.30
+                        outer_pid_x.Ki = 0.05
+                        outer_pid_x.Kd = 0.80
+                        
+                        outer_pid_y.Kp = 0.30
+                        outer_pid_y.Ki = 0.05
+                        outer_pid_y.Kd = 0.80
+                        
+                        # Outer loop update (runs at reduced frequency)
+                        if i % OUTER_LOOP_DECIMATION == 0:
+                            # Set desired velocity from controller
+                            dx_d = js_R_y * VELOCITY_MAX
+                            dy_d = js_R_x * VELOCITY_MAX
+                            
+                            # Outer loop: velocity error → desired lean angle
+                            theta_d_x = outer_pid_x.update(dx_d, dx)
+                            theta_d_y = outer_pid_y.update(dy_d, dy)
+                            
+                            # Safety: clamp lean angle setpoint
+                            theta_d_x = func_clip(theta_d_x, -THETA_MAX, THETA_MAX)
+                            theta_d_y = func_clip(theta_d_y, -THETA_MAX, THETA_MAX)
+                    else:
+                        # Simple balance control (Circle/Triangle): inner loop only, no outer loop
+                        # Robot will balance in place but may drift
+                        
+                        # Target: keep robot upright (theta_d = 0)
+                        # Allow small manual lean commands from joystick for movement
+                        # Apply deadzone to joystick to prevent drift
+                        js_R_y_filtered = 0.0 if abs(js_R_y) < 0.1 else js_R_y
+                        js_R_x_filtered = 0.0 if abs(js_R_x) < 0.1 else js_R_x
+                        
+                        theta_d_x = js_R_y_filtered * 0.1  # Small lean angle command
+                        theta_d_y = js_R_x_filtered * 0.1
 
 
 
@@ -1074,9 +1061,10 @@ def main():
                 # ============================================================
                 
                 if i % 10 == 0:
-                    mode_names = ["Cascaded", "Manual", "Balance"]
+                    mode_names = {1: "Manual", 2: "Balance" if not use_cascaded else "Cascaded"}
+                    mode_name = mode_names.get(control_mode, f"Mode{control_mode}")
                     print(
-                        f"[{mode_names[control_mode]}] "
+                        f"[{mode_name}] "
                         f"t={t_now:.2f}s | "
                         f"u=[{u1:.2f}, {u2:.2f}, {u3:.2f}] | "
                         f"θ=[{np.degrees(theta_x):.1f}°, {np.degrees(theta_y):.1f}°] | "
