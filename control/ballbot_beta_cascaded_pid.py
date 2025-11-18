@@ -664,10 +664,19 @@ def main():
                 # ============================================================
                 
                 # IMU angles (relative to initial orientation)
-                theta_x_raw = msg.imu_angles_rpy[0] - theta_x_0  # Pitch
-                theta_y_raw = msg.imu_angles_rpy[1] - theta_y_0  # Roll
-                theta_z_raw = msg.imu_angles_rpy[2] - theta_z_0  # Yaw
-                
+                #theta_x_raw = msg.imu_angles_rpy[0] - theta_x_0  # Pitch
+                #theta_y_raw = msg.imu_angles_rpy[1] - theta_y_0  # Roll
+                #theta_z_raw = msg.imu_angles_rpy[2] - theta_z_0  # Yaw
+
+
+
+                # Try to correct IMU configuration
+                theta_x_raw = msg.imu_angles_rpy[0] - theta_x_0      # Roll - keep as-is
+                theta_y_raw = -(msg.imu_angles_rpy[1] - theta_y_0)   # Pitch - negate the angle, not reference!
+                theta_z_raw = -(msg.imu_angles_rpy[2] - theta_z_0)   # Yaw - negate the angle
+
+
+
                 # Low-pass filter IMU angles, then apply deadzone
                 if not imu_filt_initialized:
                     theta_x_f = theta_x_raw
@@ -991,8 +1000,12 @@ def main():
                     # Inner loop: lean angle error → motor torque
                     # Note: theta_x/theta_y from IMU may be swapped relative to robot frame
                     # Swapping the mapping: theta_x → Ty, theta_y → Tx
-                    Ty = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
-                    Tx = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
+                    # Ty = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
+                    # Tx = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
+                    
+                    Tx = inner_pid_x.update(theta_d_x, theta_x, derivative_measurement=dtheta_x)
+                    Ty = inner_pid_y.update(theta_d_y, theta_y, derivative_measurement=dtheta_y)
+                    
                     # --------------------------------------------------------
                     # --------------------------------------------------------
 
