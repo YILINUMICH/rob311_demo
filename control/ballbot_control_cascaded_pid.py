@@ -654,7 +654,6 @@ def main():
         # ====================================================================
         
         while True:
-            time.sleep(DT)
             t_now = time.time() - t_start
             i += 1
             
@@ -1090,6 +1089,9 @@ def main():
             except Exception as e:
                 print(f"ERROR in control loop: {e}")
                 continue
+            
+            # Sleep to maintain loop rate at 200 Hz
+            time.sleep(DT)
     
     # ========================================================================
     # EXCEPTION HANDLING AND SHUTDOWN
