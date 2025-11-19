@@ -1,4 +1,8 @@
 """
+ROB 311 - Fall 2025
+Author: Prof. Greg Formosa & GSI Yilin Ma
+University of Michigan
+
 ===============================================================================
 BALL-BOT CONTROL TEMPLATE (Student Starter File)
 ===============================================================================
@@ -69,6 +73,9 @@ N_ENC = 64            # Encoder ticks per motor shaft revolution
 R_W = 0.048           # Omni-wheel radius [m]
 R_K = 0.121           # Ball radius [m]
 
+# Control how often to print status lines to the console (every N iterations)
+PRINT_EVERY = 10      # With FREQ=200, prints ~20 lines/sec / 10 = 20 Hz
+
 # Debug flag – set to False to silence dbg() output (keeps template clean)
 DEBUG = True
 
@@ -78,20 +85,28 @@ def dbg(msg: str):
         print(f"[DEBUG] {msg}")
 
 # ============================================================================
-# GLOBAL STATE (LCM feedback handling)
+# GLOBAL VARIABLES FOR LCM COMMUNICATION
 # ============================================================================
-# These globals hold the most recent feedback message and status flags used by
-# the listener thread. You could wrap them in a class later for cleaner design.
 listening = False
 msg = mbot_balbot_feedback_t()
 last_time = 0
 last_seen = {"MBOT_BALBOT_FEEDBACK": 0}
 
+# ============================================================================
+# LCM CALLBACK AND LISTENER
+# ============================================================================
 def feedback_handler(channel, data):
-    """LCM CALLBACK: Decodes incoming feedback message and updates globals.
-
-    This function runs inside the LCM listener thread context whenever a
-    message on the subscribed channel arrives.
+    """
+    Callback function invoked when sensor feedback is received.
+    
+    Updates global variables with latest sensor data including:
+    - IMU angles (roll, pitch, yaw)
+    - Encoder positions and velocities
+    - Battery voltage
+    
+    Troubleshooting:
+    - If this doesn't execute, check LCM network configuration
+    - Verify that the feedback channel name matches the publisher's channel
     """
     global msg
     global last_seen
@@ -101,65 +116,141 @@ def feedback_handler(channel, data):
     msg = mbot_balbot_feedback_t.decode(data)
 
 def lcm_listener(lc):
-    """THREAD LOOP: Polls LCM for messages and monitors activity.
-
-    Uses a timeout to periodically check if messages have stopped arriving.
-    Helpful for detecting disconnects or stalled publishers.
+    """
+    Continuously listens for LCM messages in a separate thread.
+    
+    Monitors connection health and warns if publishers become inactive.
+    
+    Troubleshooting:
+    - "LCM Publisher seems inactive" = No messages received for 2+ seconds
+    - Check physical connection to robot
+    - Verify LCM network settings match robot configuration
     """
     global listening
+
     while listening:
         try:
-            lc.handle_timeout(100)  # 100ms timeout
+            lc.handle_timeout(100)  # Wait up to 100ms for messages
+            
+            # Connection health monitoring
             if time.time() - last_time > 2.0:
-                print("LCM Publisher seems inactive...")
+                print("WARNING: LCM Publisher seems inactive...")
             elif time.time() - last_seen["MBOT_BALBOT_FEEDBACK"] > 2.0:
-                print("LCM MBOT_BALBOT_FEEDBACK node seems inactive...")
+                print("WARNING: MBOT_BALBOT_FEEDBACK node seems inactive...")
+                
         except Exception as e:
-            print(f"LCM listening error: {e}")
+            print(f"ERROR: LCM listening error: {e}")
             break
 
+# ============================================================================
+# KINEMATIC AND DYNAMIC CONVERSION FUNCTIONS
+# ============================================================================
 
+# ============================================================================
+# STUDENT TODO [LAB-08]: ENCODER -> RADIANS
+# ============================================================================
 def calc_enc2rad(ticks: int) -> float:
-    """Convert encoder ticks to wheel angle [rad].
+    """
+    Args:
+        ticks (int): Raw encoder count from the motor-side encoder.
 
-    TODO [LAB-08]: Implement:
-        motor_revs = ticks / N_ENC
-        wheel_revs = motor_revs / N_GEARBOX
-        angle_rad  = wheel_revs * 2*pi
-    Return angle_rad
+    Returns:
+        float: Wheel angular position [rad]. If you pass delta ticks / delta time
+               you can compute angular velocity [rad/s] similarly.
+
+    Notes:
+        - Accounts for gearbox reduction and encoder resolution.
+        - Angle sign convention should match your kinematic model.
     """
     rad = 0.0  # Placeholder until implemented
     return rad
+# ============================================================================
 
+# ============================================================================
+# STUDENT TODO [LAB-07]: TORQUES -> MOTOR COMMANDS (u1,u2,u3)
+# ============================================================================
 def calc_torque_conv(Tx: float, Ty: float, Tz: float):
-    """Map body-frame torques (Tx,Ty,Tz) to individual motor efforts.
-
-    TODO [LAB-07]: Derive transformation matrix from geometry.
-    Example (pseudo): [u1,u2,u3]^T = M * [Tx,Ty,Tz]^T
-    Return (u1,u2,u3)
     """
-    u1 = 0.0
-    u2 = 0.0
-    u3 = 0.0
+    Args:
+        Tx (float): Desired torque/effort along robot X (roll) axis in robot's frame.
+        Ty (float): Desired torque/effort along robot Y (pitch) axis in robot's frame.
+        Tz (float): Desired yaw torque about Z (rotation) axis in robot's frame.
+        
+    Returns:
+        u1, u2, u3: Motor command signals for wheels 1, 2, 3
+        
+    Troubleshooting:
+        - If you use trig, pi is np.pi, cos is np.cos, sin is np.sin.
+    """
+    u1 = 0.0    # Placeholder until implemented
+    u2 = 0.0    # Placeholder until implemented
+    u3 = 0.0    # Placeholder until implemented
     return u1, u2, u3
+# ============================================================================
 
+# ============================================================================
+# STUDENT TODO [LAB-08]: ENCODER ODOMETRY -> BALL ANGLES (phix, phiy, phiz)
+# ============================================================================
 def calc_kinematic_conv(psi1: float, psi2: float, psi3: float):
-    """Convert wheel angles to ball angular displacement (phix,phiy,phiz).
-
-    TODO [LAB-08]: Use ball/wheel geometry and rolling constraints.
-    Return (phix, phiy, phiz)
     """
-    phix = 0.0
-    phiy = 0.0
-    phiz = 0.0
+    Args:
+        psi1 (float): Wheel 1 angle [rad]
+        psi2 (float): Wheel 2 angle [rad]
+        psi3 (float): Wheel 3 angle [rad]
+        
+    Returns:
+        phix: Ball rotation about X-axis [rad]
+        phiy: Ball rotation about Y-axis [rad]
+        phiz: Ball rotation about Z-axis [rad]
+        
+    Notes:
+        - Multiply by R_K to get linear displacement (x = phix * R_K).
+        - Ensure your wheel-angle sign conventions match your geometry.
+    """
+    phix = 0.0  # Placeholder until implemented
+    phiy = 0.0  # Placeholder until implemented
+    phiz = 0.0  # Placeholder until implemented
     return phix, phiy, phiz
+# ============================================================================
 
 def func_clip(x: float, lim_lo: float, lim_hi: float) -> float:
-    """Clamp value into [lim_lo, lim_hi] without modifying arguments."""
+    """
+    Saturate a value to within [lim_lo, lim_hi].
+
+    Why this matters:
+        - Safety: prevents commanding the motors beyond allowed effort.
+        - Control: helps avoid integrator windup in PID implementations.
+
+    Args:
+        x (float): Input value to clamp.
+        lim_lo (float): Lower bound (inclusive).
+        lim_hi (float): Upper bound (inclusive).
+
+    Returns:
+        float: Clipped value within [lim_lo, lim_hi].
+    """
     if x > lim_hi:
         return lim_hi
     if x < lim_lo:
         return lim_lo
+    return x
+
+def apply_deadzone(x: float, deadzone: float) -> float:
+    """
+    Apply a deadzone filter to sensor or joystick readings.
+
+    Values within ±deadzone are set to zero to filter out small noise.
+    This prevents constant micro-corrections from tiny fluctuations.
+
+    Args:
+        x (float): Input value (sensor reading or joystick axis).
+        deadzone (float): Deadzone threshold (positive value).
+
+    Returns:
+        float: 0.0 if |x| < deadzone, else the original value.
+    """
+    if abs(x) < deadzone:
+        return 0.0
     return x
 
 
@@ -206,7 +297,7 @@ def main():
         # ====================================================================
         print("Starting steering control loop...")
         time.sleep(1.0)
-        # Store variable names as header to data logged, for easier parsing in Matlab
+        # Store variable names as header to data logged, for easier parsing in MATLAB
         # TODO [IF DESIRED]: Update data header variables names to match actual data logged (at end of loop)
         data = ["i t_now Tx Ty Tz u1 u2 u3 theta_x theta_y theta_z psi_1 psi_2 psi_3 dpsi_1 dpsi_2 dpsi_3"]
         dl.appendData(data)
@@ -242,11 +333,12 @@ def main():
                 # 2) CONTROLLER INPUTS
                 # Retrieve dictionary of button/analog signals from handler.
                 bt_signals = controller.get_signals()
-                # parse out individual buttons you want data from
-                js_R_x = bt_signals["js_R_x"]   # steering bot (XY) with js_R
-                js_R_y = bt_signals["js_R_y"]
-                trigger_L2 = bt_signals["trigger_L2"]   # spinning bot (Z) with L2/R2 triggers
-                trigger_R2 = bt_signals["trigger_R2"]
+                # Parse out individual inputs you want to use.
+                # Joystick/trigger ranges are normalized to [-1, 1] or [0, 1].
+                js_R_x = bt_signals["js_R_x"]   # steer X with right stick (left/right)
+                js_R_y = bt_signals["js_R_y"]   # steer Y with right stick (up/down)
+                trigger_L2 = bt_signals["trigger_L2"]   # yaw negative (e.g., CCW)
+                trigger_R2 = bt_signals["trigger_R2"]   # yaw positive (e.g., CW)
 
                 # Pull sensor data
                 # 3) SENSOR DATA (IMU & ENCODERS)
@@ -263,30 +355,36 @@ def main():
 
 
                 # Calculate motor angles from encoder ticks
+                # ============================================================================
                 # TODO [LAB-08]: Call method to calculate motor angles & speeds from measured encoder values
+                # ============================================================================
                 psi_1 = 0.0
                 psi_2 = 0.0
                 psi_3 = 0.0
+                
                 dpsi_1 = 0.0
                 dpsi_2 = 0.0
                 dpsi_3 = 0.0
 
                 # Calculate ball's roll and translation through kinematic conversions of wheel data
+                # ============================================================================
                 # TODO [LAB-08]: Call method to calculate kinematic conversion of encoder-angles to ball-translations
+                # ============================================================================
+                # phi_x, phi_y, phi_z = calc_kinematic_conv(psi_1,psi_2,psi_3)
 
-
-                # Set x-y-z bot commands
-                # TODO [LAB-07 & LAB-08]: Choose how Tx,Ty,Tz are set
+                # ============================================================================
+                # STUDENT TODO [LAB-07 & 8]: Set x-y-z bot commands
+                # ============================================================================
+                # Choose how Tx,Ty,Tz are set
                 Tx = 0.0
                 Ty = 0.0
                 Tz = 0.0
 
-                # Calculate motor effort/commands from desired Tx,Ty,Tz motion
+                # ============================================================================
                 # TODO [LAB-07]: Call method to calculate motor commands (u1,u2,u3) from axis torques (Tx,Ty,Tz)
+                # ============================================================================
 
 
-
-                
                 # Send individual motor commands
                 # Clip motor efforts for safety before sending
                 u1 = func_clip(u1,-PWM_MAX,PWM_MAX)
@@ -301,7 +399,15 @@ def main():
                 
                 # Store data in data logger
                 # TODO [IF DESIRED]: Update variables to match data header names for logging
-                data = [i, t_now, Tx, Ty, Tz, u1, u2, u3, theta_x, theta_y, theta_z, psi_1, psi_2, psi_3, dpsi_1, dpsi_2, dpsi_3]
+                data = [
+                    "i",           # Iteration counter
+                    "t_now",       # Elapsed time [s]
+                    "Tx", "Ty", "Tz",  # Commanded torques
+                    "u1", "u2", "u3",  # Motor PWM commands
+                    "theta_x", "theta_y", "theta_z",  # IMU angles [rad]
+                    "psi_1", "psi_2", "psi_3",  # Wheel angles [rad]
+                    "dpsi_1", "dpsi_2", "dpsi_3",  # Wheel velocities [rad/s]
+            ]
                 dl.appendData(data)
                 
                 # NOTE: err_x / err_y referenced previously were undefined.
@@ -309,19 +415,24 @@ def main():
                 # err_x_prev = err_x
                 # err_y_prev = err_y
 
-                # Print out data in terminal
-                # TODO: [IF DESIRED]: Update for what info you want to see in terminal (note: this is only printed data, not logged!)
-                print(
-                    f"Time: {t_now:.3f}s | Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
-                    f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
-                    f"Theta X: {theta_x:.2f}, Theta Y: {theta_y:.2f}, Theta Z: {theta_z:.2f} | "
-                    f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
-                    f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f}"
-                )
+                # ============================================================
+                # TERMINAL OUTPUT
+                # ============================================================
+                if i % PRINT_EVERY == 0:
+                    print(
+                        f"Time: {t_now:.3f}s | Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
+                        f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
+                        f"Theta X: {theta_x:.2f}, Theta Y: {theta_y:.2f}, Theta Z: {theta_z:.2f} | "
+                        f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
+                        f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f}"
+                    )
             
             except KeyError:
                 print("Waiting for sensor data...")
 
+    # ========================================================================
+    # EXCEPTION HANDLING AND SHUTDOWN
+    # ========================================================================
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received. Stopping motors...")
         # Emergency stop
@@ -333,6 +444,9 @@ def main():
         lc.publish("MBOT_MOTOR_PWM_CMD", command.encode())
     
     finally:
+        # ====================================================================
+        # CLEANUP AND DATA SAVING
+        # ====================================================================
         # Save/log data
         print(f"Saving data as {filename}...")
         dl.writeOut()  # Write logged data to the file
