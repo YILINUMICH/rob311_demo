@@ -462,12 +462,6 @@ if __name__ == "__main__":
     """
     TROUBLESHOOTING:
     
-    Problem: Controller not detected
-    - Check USB connection or Bluetooth pairing
-    - Try: ls /dev/input/js*
-    - If using ds4drv, set connecting_using_ds4drv=True
-    - Test controller: jstest /dev/input/js0
-    
     Problem: Highlighting doesn't show up
     - Some terminals don't support ANSI escape codes
     - Try running in a different terminal (xterm, gnome-terminal, etc.)
@@ -477,14 +471,5 @@ if __name__ == "__main__":
     - This is intentional! The code detects button "edges" (press events)
     - Only changes value when button transitions from 0→1
     - Does NOT change when button is held at 1
-    
-    LEARNING EXERCISES:
-    
-    1. Modify the increment values (GAIN_INCREMENT_*) to see how it affects control
-    2. Add a fourth parameter (e.g., setpoint) to the selection cycle
-    3. Change the highlighting style (try different H_START codes)
-    4. Add bounds checking that prints a warning when limits are reached
-    5. Implement a "save gains to file" feature on a button press
-    """
     
     main()
