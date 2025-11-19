@@ -59,12 +59,18 @@ from DataLogger import dataLogger
 from ps4_controller_api import PS4InputHandler
 
 # ============================================================================
-# CONFIGURATION CONSTANTS
+# 1. SETUP PHASE (CONFIGURATION)
+# ----------------------------------------------------------------------------
+# In this phase you:
+#   - Define physical & timing constants (loop rate, wheel radius, encoder specs)
+#   - Prepare communication (LCM) to talk to the robot (sensors & motor commands)
+#   - Initialize data logging so every iteration can record what happened
+# Think of this as arranging your workbench before you start building.
 # ============================================================================
-# These values configure timing and physical parameters. Adjust ONLY if you
-# understand their effect. They are used by your later computations.
 
-# Constants for the control loop
+
+# CONFIGURATION CONSTANTS
+# These values configure timing and physical parameters.
 FREQ = 200            # Control loop frequency [Hz]
 DT = 1 / FREQ         # Time step for each iteration [sec]
 PWM_MAX = 0.98        # Max motor effort (keep <= 1 for hardware safety)
@@ -76,25 +82,13 @@ R_K = 0.121           # Ball radius [m]
 # Control how often to print status lines to the console (every N iterations)
 PRINT_EVERY = 10      # With FREQ=200, prints ~20 lines/sec / 10 = 20 Hz
 
-# Debug flag – set to False to silence dbg() output (keeps template clean)
-DEBUG = True
-
-def dbg(msg: str):
-    """Conditional debug print to avoid cluttering console."""
-    if DEBUG:
-        print(f"[DEBUG] {msg}")
-
-# ============================================================================
 # GLOBAL VARIABLES FOR LCM COMMUNICATION
-# ============================================================================
 listening = False
 msg = mbot_balbot_feedback_t()
 last_time = 0
 last_seen = {"MBOT_BALBOT_FEEDBACK": 0}
 
-# ============================================================================
 # LCM CALLBACK AND LISTENER
-# ============================================================================
 def feedback_handler(channel, data):
     """
     Callback function invoked when sensor feedback is received.
@@ -255,32 +249,34 @@ def apply_deadzone(x: float, deadzone: float) -> float:
 
 
 def main():
-    # ========================================================================
     # DATA LOGGING SETUP
-    # ========================================================================
     # Ask user for a test number so each run produces a unique output file.
     trial_num = int(input("Test Number? "))
     filename = f"ballbot_control_{trial_num}.txt"
     dl = dataLogger(filename)
     
-    # ========================================================================
     # LCM INITIALIZATION (Messaging Backbone)
-    # ========================================================================
     # Create LCM instance and subscribe to feedback channel. A separate
     # listener thread will keep updating global 'msg'.
     global listening
     global msg
     lc = lcm.LCM("udpm://239.255.76.67:7667?ttl=0")
     subscription = lc.subscribe("MBOT_BALBOT_FEEDBACK", feedback_handler)
-    # Start a separate thread for reading LCM data
+
+    # ========================================================================
+    # 2. BACKGROUND WORKERS (THREADS)
+    # ------------------------------------------------------------------------
+    # Assistants running in parallel:
+    #   • Listener Thread: Continuously receives sensor feedback (like checking your mailbox).
+    #   • Controller Thread: Monitors the PS4 controller for user input.
+    # These free the main loop from blocking on I/O.
+    # ========================================================================
     listening = True
     listener_thread = threading.Thread(target=lcm_listener, args=(lc,), daemon=True)
     listener_thread.start()
     print("Started continuous LCM listener...")
 
-    # ========================================================================
     # CONTROLLER INITIALIZATION (User Input)
-    # ========================================================================
     # The PS4 controller provides steering / balancing inputs. You can expand
     # usage (e.g., gain tuning) as you progress through labs.
     controller = PS4InputHandler(interface="/dev/input/js0",connecting_using_ds4drv=False)
@@ -293,7 +289,18 @@ def main():
     try:
         command = mbot_motor_pwm_t()
         # ====================================================================
-        # MAIN CONTROL LOOP INTRO
+        # 3. MAIN LOOP (THE BRAIN)
+        # --------------------------------------------------------------------        #
+        # REPEAT EVERY 5 MILLISECONDS:
+        # ├─ SENSE/READ: Get latest sensor data (tilt angles, wheel positions)
+        # ├─ SENSE/READ: Get user input from controller (joystick commands)
+        # ├─ THINK: Calculate what the robot should do
+        # │   ├─ Convert sensor readings to useful units
+        # │   ├─ Decide how much torque/force to apply
+        # │   └─ Convert desired forces to motor commands
+        # ├─ ACT: Send commands to motors
+        # ├─ REMEMBER: Log data for later analysis
+        # └─ DISPLAY: Print status update
         # ====================================================================
         print("Starting steering control loop...")
         time.sleep(1.0)
@@ -301,6 +308,8 @@ def main():
         # TODO [IF DESIRED]: Update data header variables names to match actual data logged (at end of loop)
         data = ["i t_now Tx Ty Tz u1 u2 u3 theta_x theta_y theta_z psi_1 psi_2 psi_3 dpsi_1 dpsi_2 dpsi_3"]
         dl.appendData(data)
+
+        # Initialize variables
         i = 0  # Iteration counter
         t_start = time.time()
         t_now = 0
@@ -314,34 +323,13 @@ def main():
         theta_y_0 = msg.imu_angles_rpy[1]
         theta_z_0 = msg.imu_angles_rpy[2]
 
-        # ====================================================================
-        # CONTROL LOOP
-        # ====================================================================
-        # Each iteration:
-        #   1) Sleep until next tick
-        #   2) Read controller + sensor data
-        #   3) Compute desired torques (Tx,Ty,Tz)
-        #   4) Convert to motor efforts (u1,u2,u3)
-        #   5) Publish PWM
-        #   6) Log and optionally print
         while True:
-            time.sleep(DT)                # 1) Timing
+            time.sleep(DT)                # Timing
             t_now = time.time() - t_start # Elapsed time
             i += 1                        # Iteration counter
 
             try:
-                # 2) CONTROLLER INPUTS
-                # Retrieve dictionary of button/analog signals from handler.
-                bt_signals = controller.get_signals()
-                # Parse out individual inputs you want to use.
-                # Joystick/trigger ranges are normalized to [-1, 1] or [0, 1].
-                js_R_x = bt_signals["js_R_x"]   # steer X with right stick (left/right)
-                js_R_y = bt_signals["js_R_y"]   # steer Y with right stick (up/down)
-                trigger_L2 = bt_signals["trigger_L2"]   # yaw negative (e.g., CCW)
-                trigger_R2 = bt_signals["trigger_R2"]   # yaw positive (e.g., CW)
-
-                # Pull sensor data
-                # 3) SENSOR DATA (IMU & ENCODERS)
+                # SENSE/READ: Sensor Data
                 theta_x = msg.imu_angles_rpy[0] - theta_x_0  # roll
                 theta_y = msg.imu_angles_rpy[1] - theta_y_0  # pitch
                 theta_z = msg.imu_angles_rpy[2] - theta_z_0  # yaw
@@ -353,7 +341,17 @@ def main():
                 enc_dtick_3 = msg.enc_delta_ticks[2]
                 enc_dt = msg.enc_delta_time
 
+                # SENSE/READ: Controller Inputs
+                # Retrieve dictionary of button/analog signals from handler.
+                bt_signals = controller.get_signals()
+                # Parse out individual inputs you want to use.
+                # Joystick/trigger ranges are normalized to [-1, 1] or [0, 1].
+                js_R_x = bt_signals["js_R_x"]   # steer X with right stick (left/right)
+                js_R_y = bt_signals["js_R_y"]   # steer Y with right stick (up/down)
+                trigger_L2 = bt_signals["trigger_L2"]   # yaw negative (e.g., CCW)
+                trigger_R2 = bt_signals["trigger_R2"]   # yaw positive (e.g., CW)
 
+                # THINK: Calculate what the robot should do
                 # Calculate motor angles from encoder ticks
                 # ============================================================================
                 # TODO [LAB-08]: Call method to calculate motor angles & speeds from measured encoder values
@@ -384,7 +382,7 @@ def main():
                 # TODO [LAB-07]: Call method to calculate motor commands (u1,u2,u3) from axis torques (Tx,Ty,Tz)
                 # ============================================================================
 
-
+                # ACT: Send commands to motors
                 # Send individual motor commands
                 # Clip motor efforts for safety before sending
                 u1 = func_clip(u1,-PWM_MAX,PWM_MAX)
@@ -397,6 +395,7 @@ def main():
                 command.pwm[2] = u3
                 lc.publish("MBOT_MOTOR_PWM_CMD", command.encode())
                 
+                # Remember: Data Logging
                 # Store data in data logger
                 # TODO [IF DESIRED]: Update variables to match data header names for logging
                 data = [
@@ -415,9 +414,8 @@ def main():
                 # err_x_prev = err_x
                 # err_y_prev = err_y
 
-                # ============================================================
+                # DISPLAY: Print status update
                 # TERMINAL OUTPUT
-                # ============================================================
                 if i % PRINT_EVERY == 0:
                     print(
                         f"Time: {t_now:.3f}s | Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
@@ -430,9 +428,7 @@ def main():
             except KeyError:
                 print("Waiting for sensor data...")
 
-    # ========================================================================
     # EXCEPTION HANDLING AND SHUTDOWN
-    # ========================================================================
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received. Stopping motors...")
         # Emergency stop
@@ -445,7 +441,14 @@ def main():
     
     finally:
         # ====================================================================
-        # CLEANUP AND DATA SAVING
+        # 4. CLEANUP PHASE (SHUTDOWN)
+        # --------------------------------------------------------------------
+        # When the program stops (Ctrl+C or exit):
+        #   - Stop all motors (safety first!)
+        #   - Save logged data to file
+        #   - Close communication channels (LCM)
+        #   - Stop background threads cleanly
+        # This leaves hardware and logs in a good state for next run.
         # ====================================================================
         # Save/log data
         print(f"Saving data as {filename}...")
