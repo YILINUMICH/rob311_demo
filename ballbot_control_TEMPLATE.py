@@ -138,7 +138,7 @@ def lcm_listener(lc):
 
 # KINEMATIC AND DYNAMIC CONVERSION FUNCTIONS
 # ============================================================================
-# STUDENT TODO [LAB-08]: ENCODER -> RADIANS
+# TODO [LAB-08]: ENCODER [ticks] -> RADIANS
 def calc_enc2rad(ticks: int) -> float:
     """
     Args:
@@ -157,7 +157,7 @@ def calc_enc2rad(ticks: int) -> float:
 # ============================================================================
 
 # ============================================================================
-# STUDENT TODO [LAB-07]: TORQUES -> MOTOR COMMANDS (u1,u2,u3)
+# TODO [LAB-07]: TORQUES -> MOTOR COMMANDS (u1,u2,u3)
 def calc_torque_conv(Tx: float, Ty: float, Tz: float):
     """
     Args:
@@ -178,7 +178,7 @@ def calc_torque_conv(Tx: float, Ty: float, Tz: float):
 # ============================================================================
 
 # ============================================================================
-# STUDENT TODO [LAB-08]: ENCODER ODOMETRY -> BALL ANGLES (phix, phiy, phiz)
+# TODO [LAB-08]: ENCODER ODOMETRY -> BALL ANGLES (phix, phiy, phiz)
 def calc_kinematic_conv(psi1: float, psi2: float, psi3: float):
     """
     Args:
