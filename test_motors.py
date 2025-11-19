@@ -36,10 +36,7 @@ import sys
 import os
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from utils.DataLogger import dataLogger
+from DataLogger import dataLogger
 
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
