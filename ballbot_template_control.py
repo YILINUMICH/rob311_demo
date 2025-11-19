@@ -136,13 +136,9 @@ def lcm_listener(lc):
             print(f"ERROR: LCM listening error: {e}")
             break
 
-# ============================================================================
 # KINEMATIC AND DYNAMIC CONVERSION FUNCTIONS
 # ============================================================================
-
-# ============================================================================
 # STUDENT TODO [LAB-08]: ENCODER -> RADIANS
-# ============================================================================
 def calc_enc2rad(ticks: int) -> float:
     """
     Args:
@@ -162,7 +158,6 @@ def calc_enc2rad(ticks: int) -> float:
 
 # ============================================================================
 # STUDENT TODO [LAB-07]: TORQUES -> MOTOR COMMANDS (u1,u2,u3)
-# ============================================================================
 def calc_torque_conv(Tx: float, Ty: float, Tz: float):
     """
     Args:
@@ -184,7 +179,6 @@ def calc_torque_conv(Tx: float, Ty: float, Tz: float):
 
 # ============================================================================
 # STUDENT TODO [LAB-08]: ENCODER ODOMETRY -> BALL ANGLES (phix, phiy, phiz)
-# ============================================================================
 def calc_kinematic_conv(psi1: float, psi2: float, psi3: float):
     """
     Args:
@@ -354,32 +348,37 @@ def main():
                 # THINK: Calculate what the robot should do
                 # Calculate motor angles from encoder ticks
                 # ============================================================================
-                # TODO [LAB-08]: Call method to calculate motor angles & speeds from measured encoder values
-                # ============================================================================
+                # TODO [LAB-07]: Assign enc_pos_1, enc_pos_2, enc_pos_3 to psi_1, psi_2, psi_3
+                                #Assign enc_dtick_1, enc_dtick_2, enc_dtick_3 to dpsi_1, dpsi_2, dpsi_3       
+                # TODO [LAB-08]: Call method to convert encoder reading[tick or tick/sec] to wheel angles [rad or rad/sec]
                 psi_1 = 0.0
                 psi_2 = 0.0
                 psi_3 = 0.0
-                
                 dpsi_1 = 0.0
                 dpsi_2 = 0.0
                 dpsi_3 = 0.0
+                 # ============================================================================ 
+
 
                 # Calculate ball's roll and translation through kinematic conversions of wheel data
                 # ============================================================================
                 # TODO [LAB-08]: Call method to calculate kinematic conversion of encoder-angles to ball-translations
-                # ============================================================================
                 # phi_x, phi_y, phi_z = calc_kinematic_conv(psi_1,psi_2,psi_3)
 
+
                 # ============================================================================
-                # STUDENT TODO [LAB-07 & 8]: Set x-y-z bot commands
+
+
                 # ============================================================================
-                # Choose how Tx,Ty,Tz are set
+                # TODO [LAB-07]: Program your robot’s behavior by setting axis torques (Tx, Ty, Tz)
+                # TODO [LAB-08]: You need to update to pre-programmed path following or joystick control logic here.
                 Tx = 0.0
                 Ty = 0.0
                 Tz = 0.0
 
                 # ============================================================================
                 # TODO [LAB-07]: Call method to calculate motor commands (u1,u2,u3) from axis torques (Tx,Ty,Tz)
+
                 # ============================================================================
 
                 # ACT: Send commands to motors
