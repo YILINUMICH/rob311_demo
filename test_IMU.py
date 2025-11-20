@@ -29,7 +29,7 @@ import threading
 import numpy as np
 from mbot_lcm_msgs.mbot_motor_pwm_t import mbot_motor_pwm_t
 from mbot_lcm_msgs.mbot_balbot_feedback_t import mbot_balbot_feedback_t
-from DataLogger import dataLogger
+from DataLogger3 import dataLogger
 
 # Constants for the control loop
 FREQ = 200  # Frequency of control loop in Hz (do not change)
