@@ -144,7 +144,11 @@ class dataLogger:
         """
         if self.header is None:
             # First call - treat as headers
-            if isinstance(val, list) and isinstance(val[0], str):
+            if isinstance(val, list) and len(val) == 1 and isinstance(val[0], str):
+                # Header is a single string "col1 col2 col3", split it
+                self.header = val[0].split()
+            elif isinstance(val, list) and all(isinstance(v, str) for v in val):
+                # Already a list of strings
                 self.header = val
             else:
                 # Convert to strings for header
