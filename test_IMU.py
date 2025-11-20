@@ -100,9 +100,17 @@ def main():
 
             try:
                 # Pull sensor data
-                theta_x = msg.imu_angles_rpy[0]
-                theta_y = msg.imu_angles_rpy[1]
-                theta_z = msg.imu_angles_rpy[2]
+                theta_imu_x = msg.imu_angles_rpy[0]
+                theta_imu_y = msg.imu_angles_rpy[1]
+                theta_imu_z = msg.imu_angles_rpy[2]
+                # theta_x = theta_imu_x
+                # theta_y = theta_imu_y
+                # theta_z = theta_imu_z
+
+                # Convert IMU angles to match the expected orientation of the ballbot
+                theta_x = -theta_imu_y
+                theta_y = theta_imu_x
+                theta_z = theta_imu_z
                 psi_1 = 0
                 psi_2 = 0
                 psi_3 = 0
@@ -114,11 +122,12 @@ def main():
                 data = [i, t_now, Tx, Ty, Tz, u1, u2, u3, theta_x, theta_y, theta_z, psi_1, psi_2, psi_3, dpsi_1, dpsi_2, dpsi_3]
                 dl.appendData(data)
                 print(
-                    f"Time: {t_now:.3f}s | Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
-                    f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
+                    f"Time: {t_now:.3f}s |"
+                    # f"Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
+                    # f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
                     f"Theta X: {theta_x:.2f}, Theta Y: {theta_y:.2f}, Theta Z: {theta_z:.2f} | "
-                    f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
-                    f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
+                    # f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
+                    # f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
                 )
             
             except KeyError:
