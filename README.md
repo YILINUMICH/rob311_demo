@@ -2,45 +2,61 @@
 
 **Course:** ROB 311 - Fall 2025  
 **Institution:** University of Michigan  
-**Instructor:** Prof. Greg Formosa
+**Instructor:** Prof. Greg Formosa  
+**GSI:** Yilin Ma
 
 ## 📁 Repository Structure
 
+### File Naming Convention
+- **`ballbot_control_*.py`** - Student-facing control templates and implementations
+- **`ballbot_beta_*.py`** - Experimental/development versions (not for students)
+- **`ballbot_ref_*.py`** - Reference implementations for students
+- **`ballbot_solution_*.py`** - Solution code (instructor only)
+- **`ballbot_demo_*.py`** - Course lab demonstrations
+
 ```
 rob311_demo/
-├── control/                      # Control implementations
-│   ├── ballbot_control.py              # Basic PID controller
-│   ├── ballbot_control_cascaded_pid.py # Cascaded PID (inner + outer loops)
-│   ├── ballbot_control_auto_pid.py     # Auto-tuning PID (Tyreus-Luyben)
-│   ├── ballbot_control_lqr.py          # LQR + EKF optimal control
-│   ├── ballbot_estop_demo.py           # Emergency stop demo
-│   ├── dpad_control_demo.py            # D-pad gain tuning demo
-│   ├── lab9_demo.py                    # Lab 9 demonstration
-│   ├── DataLogger.py                   # Data logging utility
-│   ├── DataLogger3.py                  # TCP streaming logger (robot-side)
-│   ├── ps4_controller_api.py           # PS4 controller interface
-│   └── pid_gains.json                  # Persistent PID parameters
+├── Control Scripts (Student-Facing)
+│   ├── ballbot_control_TEMPLATE.py         # Starting template for students
+│   ├── ballbot_ref_dpad.py                 # Reference: D-pad gain tuning
+│   ├── ballbot_ref_estop.py                # Reference: Emergency stop
+│   └── ballbot_demo_lab9.py                # Lab 9 demonstration
 │
-├── tests/                        # Hardware test scripts
-│   ├── test_motors.py                  # Motor PWM and encoder test
-│   ├── test_BT.py                      # Bluetooth communication test
-│   ├── imu_realtime.py                 # IMU test with plotting
-│   └── imu_viewer.m                    # MATLAB IMU viewer
+├── Control Scripts (Instructor/Development)
+│   ├── ballbot_beta_balance_pid.py         # Experimental: Basic balance PID
+│   ├── ballbot_beta_auto_pid.py            # Experimental: Auto-tuning PID
+│   ├── ballbot_beta_lqr.py                 # Experimental: LQR + EKF
+│   ├── ballbot_solution_control.py         # Solution code
+│   └── ballbot_solution_lab-07-08.py       # Lab 7-8 solution
 │
-├── data/                         # Data output files (auto-generated)
-│   ├── ballbot_control_*.txt
-│   ├── test_motors_*.txt
-│   └── test_IMU_*.txt
+├── Hardware Test Scripts
+│   ├── test_motors.py                      # Motor PWM and encoder test
+│   ├── test_BT.py                          # Bluetooth communication test
+│   ├── test_IMU.py                         # IMU basic test
+│   ├── test_imu_realtime.py                # IMU test with real-time plotting
+│   └── test_imu_viewer.m                   # MATLAB IMU viewer
 │
-├── docs/                         # Documentation
-│   ├── PLOTTING_README.md
-│   └── PID_PERSISTENCE_README.md
+├── Data Logging & Utilities
+│   ├── DataLogger.py                       # Legacy file-based logger
+│   ├── DataLogger2.py                      # Intermediate version
+│   ├── DataLogger3.py                      # TCP streaming logger (robot-side)
+│   ├── ps4_controller_api.py               # PS4 controller interface
+│   └── pid_gains.json                      # Persistent PID parameters (auto-generated)
 │
-├── DataLogger3_viewer.py         # Real-time plot viewer (laptop)
-├── LP_pid_viewer.py              # PID gain live tuning viewer (laptop)
-├── install_dependencies.sh       # Dependency installer
-├── requirements.txt              # Python dependencies
-└── README.md                     # This file
+├── Laptop Viewers
+│   ├── DataLogger3_viewer.py               # Real-time plot viewer
+│   ├── LP_pid_viewer.py                    # PID gain live tuning interface
+│   └── Ballbolt_remote_monitor.py          # Remote monitoring tool
+│
+├── Configuration
+│   ├── install_dependencies.sh             # Dependency installer
+│   ├── requirements.txt                    # Python dependencies
+│   └── README.md                           # This file
+│
+└── Data Output (auto-generated)
+    ├── test_motors_*.txt
+    ├── test_IMU_*.txt
+    └── _logger_test.txt
 ```
 
 ## 🚀 Quick Start
@@ -62,51 +78,55 @@ pip3 install numpy pyqtgraph PyQt5
 
 #### Test Motors
 ```bash
-cd tests
 python3 test_motors.py
 ```
 - Sweeps motor PWM from 0 → max → 0
 - Records encoder ticks and PWM commands
-- Data saved to `data/test_motors_[#].txt`
+- Data saved to `test_motors_[#].txt`
 
 #### Test IMU
 ```bash
-cd tests
-python3 imu_realtime.py
+python3 test_IMU.py                # Basic IMU test
+python3 test_imu_realtime.py       # IMU with real-time plotting
 ```
 - Displays IMU angles (roll, pitch, yaw)
-- Data saved to `data/test_IMU_[#].txt`
+- Data saved to `test_IMU_[#].txt`
+
+#### Test Bluetooth
+```bash
+python3 test_BT.py
+```
+- Tests Bluetooth communication
+- Verifies PS4 controller connection
 
 ### 3. Run Control Scripts
 
-#### Cascaded PID (Recommended Starting Point)
+#### Student Template (Start Here)
 ```bash
-cd control
-python3 ballbot_control_cascaded_pid.py
+python3 ballbot_control_TEMPLATE.py
 ```
-- Outer loop: Position control (X/Y/Yaw)
-- Inner loop: Balance control (theta_x, theta_y)
-- PS4 controller steering
-- Gains auto-saved to `pid_gains.json`
+- Clean starting template for students
+- Basic structure with PS4 controller integration
+- Students implement their own control logic
 
-#### Auto-Tuning PID
+#### Reference Implementations
 ```bash
-cd control
-python3 ballbot_control_auto_pid.py
+python3 ballbot_ref_dpad.py      # D-pad gain tuning reference
+python3 ballbot_ref_estop.py     # Emergency stop reference
+python3 ballbot_demo_lab9.py     # Lab 9 demonstration
 ```
-- Automatic gain tuning using relay method
-- Tyreus-Luyben tuning rules (safer for unstable systems)
-- No steering, focuses on balance only
 
-#### LQR + EKF (Optimal Control)
+#### Experimental Controllers (Development/Advanced)
 ```bash
-cd control
-python3 ballbot_control_lqr.py
+python3 ballbot_beta_balance_pid.py  # Basic balance PID
+python3 ballbot_beta_auto_pid.py     # Auto-tuning PID (Tyreus-Luyben)
+python3 ballbot_beta_lqr.py          # LQR + EKF optimal control
 ```
-- Linear Quadratic Regulator for optimal control
-- Extended Kalman Filter for noise rejection
-- No manual tuning required
-- State-feedback control
+
+**Note:** 
+- `ballbot_solution_*.py` files contain instructor solutions (not for students)
+- All control scripts auto-save PID gains to `pid_gains.json`
+- Press `Ctrl+C` to safely exit any control script
 
 ### 4. Real-Time Data Visualization (Laptop)
 
@@ -160,23 +180,27 @@ Robot (Raspberry Pi)          Laptop
 
 ### Usage
 
-**Robot Side:**
+**Robot Side (in your control script):**
 ```python
 from DataLogger3 import dataLogger
 
-# In your control script
+# Initialize logger with column names
 logger = dataLogger(["time", "theta_x", "theta_y", "Tx", "Ty"], enable_plotting=True)
 
-# In control loop
+# In control loop (200 Hz)
 logger.appendData([t_now, theta_x, theta_y, Tx, Ty])
 ```
 
 **Laptop Side:**
 ```bash
+# Connect to robot (default IP: 67.194.46.111)
 python3 DataLogger3_viewer.py <robot_ip>
-# Or use default IP (configured at top of file)
+
+# Or use default IP (configurable at top of file)
 python3 DataLogger3_viewer.py
 ```
+
+**Change default IP:** Edit `DEFAULT_ROBOT_IP` at top of `DataLogger3_viewer.py`
 
 ### Display Modes
 
@@ -198,46 +222,57 @@ python3 DataLogger3_viewer.py
 
 ## 📝 Key Files
 
-### Control Implementations (`control/`)
+### Student-Facing Control Scripts
 
-| File | Description | Features |
-|------|-------------|----------|
-| `ballbot_control.py` | Basic PID controller | Simple single-loop PID |
-| `ballbot_control_cascaded_pid.py` | Cascaded PID (recommended) | Inner (balance) + Outer (position) loops, PS4 steering |
-| `ballbot_control_auto_pid.py` | Auto-tuning PID | Relay method, Tyreus-Luyben rules, balance-only |
-| `ballbot_control_lqr.py` | LQR + EKF | Optimal control, no manual tuning, noise rejection |
-| `ballbot_estop_demo.py` | Emergency stop demo | Safety features demonstration |
-| `dpad_control_demo.py` | D-pad tuning demo | Live gain adjustment with controller |
-| `lab9_demo.py` | Lab 9 reference | Course lab demonstration |
+| File | Purpose | Description |
+|------|---------|-------------|
+| `ballbot_control_TEMPLATE.py` | **Start here** | Clean template for students to implement control |
+| `ballbot_ref_dpad.py` | Reference | D-pad gain tuning implementation |
+| `ballbot_ref_estop.py` | Reference | Emergency stop implementation |
+| `ballbot_demo_lab9.py` | Lab demo | Lab 9 demonstration code |
 
-### Data Logging (`control/`)
+### Instructor/Development Control Scripts
+
+| File | Status | Description |
+|------|--------|-------------|
+| `ballbot_beta_balance_pid.py` | Experimental | Basic balance PID controller |
+| `ballbot_beta_auto_pid.py` | Experimental | Auto-tuning PID (Åström-Hägglund relay method) |
+| `ballbot_beta_lqr.py` | Experimental | LQR + EKF optimal control |
+| `ballbot_solution_control.py` | Solution | Instructor solution (not for students) |
+| `ballbot_solution_lab-07-08.py` | Solution | Lab 7-8 solution (not for students) |
+
+### Data Logging & Utilities
 
 | File | Description |
 |------|-------------|
 | `DataLogger.py` | Legacy file-based logger |
-| `DataLogger3.py` | TCP streaming logger (robot-side server) |
+| `DataLogger2.py` | Intermediate version |
+| `DataLogger3.py` | TCP streaming logger (robot-side server, port 5557) |
+| `ps4_controller_api.py` | PS4 controller interface wrapper |
 | `pid_gains.json` | Persistent PID parameters (auto-generated) |
 
-### Viewers (Run on Laptop)
+### Laptop Viewers
 
 | File | Description | Port |
 |------|-------------|------|
-| `DataLogger3_viewer.py` | Real-time plot viewer | 5557 |
-| `LP_pid_viewer.py` | PID gain tuning interface | 5557 |
+| `DataLogger3_viewer.py` | Real-time plot viewer with 3 display modes | 5557 |
+| `LP_pid_viewer.py` | Live PID gain tuning interface | 5557 |
+| `Ballbolt_remote_monitor.py` | Remote monitoring tool | - |
 
-### Test Scripts (`tests/`)
+### Hardware Test Scripts
 
 | File | Description |
 |------|-------------|
 | `test_motors.py` | Motor PWM and encoder test |
-| `imu_realtime.py` | IMU orientation test |
+| `test_IMU.py` | Basic IMU test |
+| `test_imu_realtime.py` | IMU test with real-time plotting |
+| `test_imu_viewer.m` | MATLAB IMU viewer |
 | `test_BT.py` | Bluetooth communication test |
 
-### Utilities
+### Configuration
 
 | File | Description |
 |------|-------------|
-| `ps4_controller_api.py` | PS4 controller interface wrapper |
 | `install_dependencies.sh` | Automated dependency installer |
 | `requirements.txt` | Python package dependencies |
 
@@ -346,6 +381,11 @@ pip3 install --upgrade numpy pyqtgraph PyQt5
 
 ---
 
-**ROB 311 - Fall 2025 | University of Michigan | Prof. Greg Formosa**
+**ROB 311 - Fall 2025**  
+**University of Michigan**  
+**Instructor:** Prof. Greg Formosa  
+**GSI:** Yilin Ma
+
+*Authored by Prof. Greg Formosa and Yilin Ma*
 
 ````
