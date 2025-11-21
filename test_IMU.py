@@ -123,11 +123,11 @@ def main():
                 dl.appendData(data)
                 print(
                     f"Time: {t_now:.3f}s |"
-                    # f"Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
-                    # f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
+                    f"Tx: {Tx:.2f}, Ty: {Ty:.2f}, Tz: {Tz:.2f} | "
+                    f"u1: {u1:.2f}, u2: {u2:.2f}, u3: {u3:.2f} | "
                     f"Theta X: {theta_x:.2f}, Theta Y: {theta_y:.2f}, Theta Z: {theta_z:.2f} | "
-                    # f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
-                    # f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
+                    f"Psi 1: {psi_1:.1f}, Psi 2: {psi_2:.1f}, Psi 3: {psi_3:.1f} | "
+                    f"dPsi 1: {dpsi_1:.2f}, dPsi 2: {dpsi_2:.2f}, dPsi 3: {dpsi_3:.2f} | "
                 )
             
             except KeyError:
