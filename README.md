@@ -33,7 +33,7 @@ rob311_demo/
 │   ├── test_motors.py                      # Motor PWM and encoder test
 │   ├── test_BT.py                          # Bluetooth communication test
 │   ├── test_IMU.py                         # IMU basic test
-│   ├── test_imu_realtime.py                # IMU test with real-time plotting
+│   ├── test_imu_realtime.py                # IMU real-time plotting, replaced by Datalogger3
 │   └── test_imu_viewer.m                   # MATLAB IMU viewer
 │
 ├── Data Logging & Utilities
@@ -44,9 +44,8 @@ rob311_demo/
 │   └── pid_gains.json                      # Persistent PID parameters (auto-generated)
 │
 ├── Laptop Viewers
-│   ├── DataLogger3_viewer.py               # Real-time plot viewer
-│   ├── LP_pid_viewer.py                    # PID gain live tuning interface
-│   └── Ballbolt_remote_monitor.py          # Remote monitoring tool
+│   ├── Ballbolt_remote_monitor.py          # Real-time plot viewer (formerly DataLogger3_viewer.py)
+│   └── LP_pid_viewer.py                    # PID gain live tuning interface
 │
 ├── Configuration
 │   ├── install_dependencies.sh             # Dependency installer
@@ -139,7 +138,7 @@ python3 ballbot_control_cascaded_pid.py  # Or any control script using DataLogge
 
 **On Laptop:**
 ```bash
-python3 DataLogger3_viewer.py <robot_ip>
+python3 Ballbolt_remote_monitor.py <robot_ip>
 ```
 - Three display modes: Diagnosis, PID Tuning, IMU Level
 - 200 Hz data streaming
@@ -194,13 +193,13 @@ logger.appendData([t_now, theta_x, theta_y, Tx, Ty])
 **Laptop Side:**
 ```bash
 # Connect to robot (default IP: 67.194.46.111)
-python3 DataLogger3_viewer.py <robot_ip>
+python3 Ballbolt_remote_monitor.py <robot_ip>
 
 # Or use default IP (configurable at top of file)
-python3 DataLogger3_viewer.py
+python3 Ballbolt_remote_monitor.py
 ```
 
-**Change default IP:** Edit `DEFAULT_ROBOT_IP` at top of `DataLogger3_viewer.py`
+**Change default IP:** Edit `DEFAULT_ROBOT_IP` at top of `Ballbolt_remote_monitor.py`
 
 ### Display Modes
 
@@ -255,9 +254,8 @@ python3 DataLogger3_viewer.py
 
 | File | Description | Port |
 |------|-------------|------|
-| `DataLogger3_viewer.py` | Real-time plot viewer with 3 display modes | 5557 |
+| `Ballbolt_remote_monitor.py` | Real-time plot viewer with 3 display modes | 5557 |
 | `LP_pid_viewer.py` | Live PID gain tuning interface | 5557 |
-| `Ballbolt_remote_monitor.py` | Remote monitoring tool | - |
 
 ### Hardware Test Scripts
 
@@ -375,7 +373,7 @@ pip3 install --upgrade numpy pyqtgraph PyQt5
 
 ## 📚 Additional Documentation
 
-- **DataLogger3**: See inline comments in `DataLogger3.py` and `DataLogger3_viewer.py`
+- **DataLogger3**: See inline comments in `DataLogger3.py` and `Ballbolt_remote_monitor.py`
 - **PID Tuning**: See `docs/PID_PERSISTENCE_README.md`
 - **Plotting Guide**: See `docs/PLOTTING_README.md`
 
